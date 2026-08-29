@@ -56,6 +56,20 @@ assert(a ~= c)
 assert(b ~= c)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local a = my_test.get_obj0();
+local b = my_test.get_obj0();
+
+assert(a == b);
+
+local c = my_test.get_obj1();
+
+assert(a != c);
+assert(b != c);
+'''
+
 test_go = '''\
 package mytest
 

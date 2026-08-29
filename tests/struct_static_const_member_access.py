@@ -49,6 +49,21 @@ assert(my_test.simple_struct.i == 5)
 assert(my_test.simple_struct.s == "some string")
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local v = my_test.simple_struct();
+assert(v.v == 3);
+
+assert(my_test.simple_struct.get_i() == 5);
+my_test.simple_struct.set_i(9);
+assert(my_test.simple_struct.get_i() == 9);
+assert(v.get_i() == 9);
+
+assert(my_test.simple_struct.get_s() == "some string");
+assert(v.get_s() == "some string");
+'''
+
 test_go = '''\
 package mytest
 

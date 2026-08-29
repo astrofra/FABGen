@@ -14,7 +14,7 @@ The immediate goal was practical:
 
 ## What Was Implemented
 
-Updated file:
+Updated files:
 
 - `lang/squirrel.py`
 - `gen.py`
@@ -29,6 +29,11 @@ The Squirrel backend now supports a first working class model based on native Sq
 - Script-side constructors for bound classes.
 - Instance member reads and writes through `_get` and `_set`.
 - Instance methods and static methods registered as native class slots.
+- Static data members exposed through generated explicit accessors named `get_<member>()` and `set_<member>(value)` on the Squirrel class object.
+- Reuse of the same Squirrel proxy for repeated non-owning returns of the same C++ object.
+- Arithmetic metamethod binding for `_add`, `_sub`, `_mul`, and `_div`.
+- Comparison support through `_cmp` for class-to-class comparisons.
+- Safe tracked-VM shutdown through a generated `gen_release_<module>(v)` helper called before `sq_close(v)`, which avoids dangling callback releases during process teardown.
 - C++ to Squirrel object conversion through `sq_createinstance()`.
 - Squirrel to C++ object conversion with FABGen type-tag cast checks.
 - Minimal sequence-style `_get` and `_set` support for wrapped classes with the FABGen `sequence` feature.
@@ -62,10 +67,14 @@ This kept the implementation compatible with FABGen's existing constructor proxy
 Updated tests:
 
 - `tests/function_call.py`
+- `tests/return_nullptr_as_none.py`
 - `tests/std_vector.py`
+- `tests/struct_default_comparison.py`
 - `tests/struct_instantiation.py`
 - `tests/struct_member_access.py`
 - `tests/struct_method_call.py`
+- `tests/struct_operator_call.py`
+- `tests/struct_static_const_member_access.py`
 - `tests/struct_exchange.py`
 - `tests/variable_access.py`
 - `tests/struct_bitfield_member_access.py`
@@ -74,14 +83,19 @@ Updated tests:
 New Squirrel coverage now validates:
 
 - Global C++ function calls from Squirrel, including overload resolution and optional arguments.
+- Null pointer returns mapped to Squirrel `null`.
 - `std::vector<int>` construction from a Squirrel array.
 - Integer-index reads and writes on wrapped sequence-like objects.
 - Implicit cast from a wrapped `std::vector<int>` object to `int *` through FABGen cast rules.
 - Constructing bound classes from Squirrel.
 - Reading and writing bound C++ struct members from Squirrel.
 - Calling bound instance methods and static methods from Squirrel.
+- Accessing bound static data members from Squirrel through explicit generated accessors.
 - Passing wrapped objects between Squirrel and C++ by value, pointer, and reference.
 - Returning wrapped objects from C++ back to Squirrel.
+- Preserving Squirrel object identity when the same non-owning C++ object is returned repeatedly.
+- Using class arithmetic metamethods (`_add`, `_sub`, `_mul`, `_div`) on bound objects.
+- Using class comparison support through `_cmp`, including equality-style checks with `<=>`.
 - Accessing module-level bound variables from Squirrel.
 - Accessing and mutating bitfield-backed members from Squirrel.
 - Accessing nested bound objects through wrapped member references.
@@ -128,6 +142,19 @@ Result:
 
 - `2 run, 0 failed`
 
+Additional Squirrel class feature test commands validated later on Saturday, August 29, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug return_nullptr_as_none
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_static_const_member_access
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_default_comparison
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_operator_call
+```
+
+Result:
+
+- `4 run, 0 failed`
+
 Full currently-enabled Squirrel suite:
 
 ```powershell
@@ -136,21 +163,25 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Saturday, August 29, 2026:
 
-- `12 run, 0 failed, 18 skipped`
+- `16 run, 0 failed, 14 skipped`
 
 Passing Squirrel tests:
 
 - `basic_type_exchange`
 - `function_call`
+- `return_nullptr_as_none`
 - `script_collection_exchange`
 - `std_function`
 - `std_vector`
 - `struct_bitfield_member_access`
+- `struct_default_comparison`
 - `struct_exchange`
 - `struct_instantiation`
 - `struct_member_access`
 - `struct_method_call`
 - `struct_nesting`
+- `struct_operator_call`
+- `struct_static_const_member_access`
 - `variable_access`
 
 ## Current Limits
@@ -159,11 +190,39 @@ This is an intentionally small phase 2 slice, not full Lua parity yet.
 
 Known limits after this step:
 
-- Static data members are not exposed yet as Squirrel property-style fields.
+- Direct class-side property writes such as `MyType.value = ...` are still blocked by the Squirrel VM object model. Mutable static data members are exposed through `MyType.get_value()` / `MyType.set_value(v)` instead.
 - Sequence support is intentionally minimal: integer `_get/_set` works for FABGen `sequence` classes, but `len`, `_nexti`, and richer container behaviors are still missing.
-- Arithmetic and comparison metamethod binding for Squirrel classes is not implemented yet.
+- Squirrel `==` and `!=` on distinct class instances remain identity-based in the VM itself. FABGen now preserves identity for repeated non-owning returns, but value-based equality on separate wrapped instances must currently use `<=>` through `_cmp`. Mixed comparisons such as `instance <=> 4` are still blocked by the VM dispatch rules and do not reach `_cmp`.
 - The class `from_c` path currently assumes the generated module has been bound into the Squirrel root table.
 - Broader historical FABGen tests still need `test_squirrel` coverage before they can validate the class backend more deeply.
+
+## Static Data Member Policy
+
+For stock Squirrel, direct property-style mutation on class objects is not a robust target for FABGen-generated static data members.
+
+The backend therefore uses an explicit API for static data:
+
+- `MyType.get_value()` for reads.
+- `MyType.set_value(v)` for writes when the C++ static member is mutable.
+
+This keeps the binding consistent with the actual Squirrel VM behavior:
+
+- no stale registration-time snapshot,
+- no fake property semantics that diverge after mutation,
+- no dependence on a patched Squirrel runtime.
+
+## VM Shutdown Policy
+
+Squirrel callbacks captured into C++ `std::function` objects may outlive the point where the host decides to close the VM.
+
+To make that shutdown path reliable, the generated Squirrel backend now exposes a release helper:
+
+- `gen_release_<module>(v)`
+
+The embedding host should call this helper before `sq_close(v)`.
+The helper releases tracked instance-cache references and marks tracked callback references as no longer safe to release through the VM.
+
+The FABGen Squirrel test host was updated accordingly, and the previously intermittent `std_function` Squirrel test was revalidated after that change.
 
 ## Practical Outcome
 
@@ -179,8 +238,7 @@ At this point it can validate the core object workflow required for the first in
 
 ## Recommended Next Steps
 
-- Extend the class backend to support static data members.
-- Add Squirrel coverage for `return_nullptr_as_none`.
+- Keep the explicit static accessor policy unless a custom Squirrel runtime is accepted.
 - Add richer sequence support for Squirrel classes, especially `len` and iteration.
 - Add Squirrel support for sequence features on wrapped classes.
 - Add inheritance-specific Squirrel tests once class inheritance behavior is intentionally designed.

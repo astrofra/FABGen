@@ -545,11 +545,13 @@ int main(int argc, char **argv) {
 	sq_setprintfunc(v, printfunc, errorfunc);
 
 	if (!register_stdlibs(v)) {
+		gen_release_my_test(v);
 		sq_close(v);
 		return 2;
 	}
 
 	if (SQ_FAILED(gen_bind_my_test(v, _SC("my_test")))) {
+		gen_release_my_test(v);
 		sq_close(v);
 		return 3;
 	}
@@ -557,11 +559,13 @@ int main(int argc, char **argv) {
 	sq_pushroottable(v);
 	if (SQ_FAILED(sqstd_dofile(v, _SC("test.nut"), SQFalse, SQTrue))) {
 		sq_poptop(v);
+		gen_release_my_test(v);
 		sq_close(v);
 		return 4;
 	}
 	sq_poptop(v);
 
+	gen_release_my_test(v);
 	sq_close(v);
 	return 0;
 }

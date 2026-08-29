@@ -129,6 +129,44 @@ assert(c == b)
 assert(a ~= b)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local a = my_test.simple_struct(4);
+local b = my_test.simple_struct(8);
+
+local s = a + b;
+assert(s.v == 12);
+s = s + b;
+assert(s.v == 20);
+s = s + 4;
+assert(s.v == 24);
+
+s = s / 4;
+assert(s.v == 6);
+s = s / 3;
+assert(s.v == 2);
+s = s + a;
+assert(s.v == 6);
+
+s = s * a;
+assert(s.v == 24);
+s = s * 2;
+assert(s.v == 48);
+
+s = s - b;
+assert(s.v == 40);
+s = s - 32;
+assert(s.v == 8);
+
+local c = a * 2;
+assert((c <=> b) == 0);
+assert((a <=> b) != 0);
+
+local d = my_test.simple_struct(4);
+assert((a <=> d) == 0);
+'''
+
 test_go = """\
 package mytest
 

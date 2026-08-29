@@ -8,6 +8,10 @@ def _escape_sq_string(value):
 	return value.replace('\\', '\\\\').replace('"', '\\"')
 
 
+def _get_default_bound_name(value):
+	return gen.get_symbol_default_bound_name(value)
+
+
 def build_index_map(name, values, filter, gen_output):
 	out = 'static std::map<std::basic_string<SQChar>, SQFUNCTION> %s = {' % name
 	if len(values) > 0:
@@ -61,8 +65,11 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 		seq = self._features['sequence'] if has_sequence else None
 
 		all_members = self.get_all_members()
+		all_static_members = self.get_all_static_members()
 		all_methods = self.get_all_methods() + self.get_all_static_methods()
 		has_mutable_members = any(member['setter'] for member in all_members)
+		comparison_ops = {op['op']: op for op in self.comparison_ops}
+		sq_arithmetic_metamethods = {'+': '_add', '-': '_sub', '*': '_mul', '/': '_div'}
 
 		out += build_index_map('__get_member_map_%s' % self.bound_name, all_members, lambda v: True, lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['getter']))
 		out += build_index_map('__set_member_map_%s' % self.bound_name, all_members, lambda v: v['setter'], lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['setter']))
@@ -167,6 +174,166 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 	((T*)o)->~T();
 }\n\n''' % (self.bound_name, self.ctype)
 
+		out += 'static std::map<HSQUIRRELVM, std::map<void *, HSQOBJECT>> __instance_cache_%s;\n\n' % self.bound_name
+
+		out += '''static void release_cached_%s_instance(HSQUIRRELVM v, void *obj) {
+	if (!obj)
+		return;
+
+	auto vm_cache = __instance_cache_%s.find(v);
+	if (vm_cache == __instance_cache_%s.end())
+		return;
+
+	auto instance = vm_cache->second.find(obj);
+	if (instance == vm_cache->second.end())
+		return;
+
+	sq_release(v, &instance->second);
+	vm_cache->second.erase(instance);
+	if (vm_cache->second.empty())
+		__instance_cache_%s.erase(vm_cache);
+}\n\n''' % (self.bound_name, self.bound_name, self.bound_name, self.bound_name)
+
+		out += '''static bool push_cached_%s_instance(HSQUIRRELVM v, void *obj) {
+	if (!obj)
+		return false;
+
+	auto vm_cache = __instance_cache_%s.find(v);
+	if (vm_cache == __instance_cache_%s.end())
+		return false;
+
+	auto instance = vm_cache->second.find(obj);
+	if (instance == vm_cache->second.end())
+		return false;
+
+	sq_pushobject(v, instance->second);
+	if (SQ_FAILED(sq_getweakrefval(v, -1))) {
+		sq_poptop(v);
+		release_cached_%s_instance(v, obj);
+		return false;
+	}
+
+	sq_remove(v, -2);
+	if (sq_gettype(v, -1) == OT_NULL) {
+		sq_poptop(v);
+		release_cached_%s_instance(v, obj);
+		return false;
+	}
+
+	return true;
+}\n\n''' % (self.bound_name, self.bound_name, self.bound_name, self.bound_name, self.bound_name)
+
+		out += '''static void cache_%s_instance(HSQUIRRELVM v, void *obj) {
+	if (!obj)
+		return;
+
+	sq_weakref(v, -1);
+
+	HSQOBJECT weakref;
+	sq_resetobject(&weakref);
+	sq_getstackobj(v, -1, &weakref);
+	sq_addref(v, &weakref);
+	sq_poptop(v);
+
+	auto &vm_cache = __instance_cache_%s[v];
+	auto instance = vm_cache.find(obj);
+	if (instance != vm_cache.end()) {
+		sq_release(v, &instance->second);
+		instance->second = weakref;
+	} else {
+		vm_cache[obj] = weakref;
+	}
+}\n\n''' % (self.bound_name, self.bound_name)
+
+		out += '''static void release_cached_%s_instances(HSQUIRRELVM v) {
+	auto vm_cache = __instance_cache_%s.find(v);
+	if (vm_cache == __instance_cache_%s.end())
+		return;
+
+	for (auto &instance : vm_cache->second)
+		sq_release(v, &instance.second);
+
+	__instance_cache_%s.erase(vm_cache);
+}\n\n''' % (self.bound_name, self.bound_name, self.bound_name, self.bound_name)
+
+		if len(comparison_ops) > 0:
+			out += '''static SQInteger __cmp_%s_instance(HSQUIRRELVM v) {
+''' % self.bound_name
+
+			if '==' in comparison_ops:
+				out += '''\
+	SQInteger eq_rval_count = %s(v);
+	if (eq_rval_count == SQ_ERROR)
+		return SQ_ERROR;
+	if (eq_rval_count != 1 || sq_gettype(v, -1) != OT_BOOL)
+		return sq_throwerror(v, _SC("internal error: invalid comparison result for %s"));
+	SQBool is_equal = SQFalse;
+	sq_getbool(v, -1, &is_equal);
+	sq_poptop(v);
+	if (is_equal) {
+		sq_pushinteger(v, 0);
+		return 1;
+	}
+''' % (comparison_ops['==']['proxy_name'], _escape_sq_string(self.bound_name))
+
+			if '<' in comparison_ops:
+				out += '''\
+	SQInteger lt_rval_count = %s(v);
+	if (lt_rval_count == SQ_ERROR)
+		return SQ_ERROR;
+	if (lt_rval_count != 1 || sq_gettype(v, -1) != OT_BOOL)
+		return sq_throwerror(v, _SC("internal error: invalid comparison result for %s"));
+	SQBool is_less = SQFalse;
+	sq_getbool(v, -1, &is_less);
+	sq_poptop(v);
+	if (is_less) {
+		sq_pushinteger(v, -1);
+		return 1;
+	}
+''' % (comparison_ops['<']['proxy_name'], _escape_sq_string(self.bound_name))
+
+			if '>' in comparison_ops:
+				out += '''\
+	SQInteger gt_rval_count = %s(v);
+	if (gt_rval_count == SQ_ERROR)
+		return SQ_ERROR;
+	if (gt_rval_count != 1 || sq_gettype(v, -1) != OT_BOOL)
+		return sq_throwerror(v, _SC("internal error: invalid comparison result for %s"));
+	SQBool is_greater = SQFalse;
+	sq_getbool(v, -1, &is_greater);
+	sq_poptop(v);
+	if (is_greater) {
+		sq_pushinteger(v, 1);
+		return 1;
+	}
+''' % (comparison_ops['>']['proxy_name'], _escape_sq_string(self.bound_name))
+
+			if '!=' in comparison_ops:
+				out += '''\
+	SQInteger ne_rval_count = %s(v);
+	if (ne_rval_count == SQ_ERROR)
+		return SQ_ERROR;
+	if (ne_rval_count != 1 || sq_gettype(v, -1) != OT_BOOL)
+		return sq_throwerror(v, _SC("internal error: invalid comparison result for %s"));
+	SQBool is_not_equal = SQFalse;
+	sq_getbool(v, -1, &is_not_equal);
+	sq_poptop(v);
+	sq_pushinteger(v, is_not_equal ? 1 : 0);
+	return 1;
+''' % (comparison_ops['!=']['proxy_name'], _escape_sq_string(self.bound_name))
+			elif '==' in comparison_ops:
+				out += '''\
+	sq_pushinteger(v, 1);
+	return 1;
+'''
+			else:
+				out += '''\
+	sq_pushinteger(v, 0);
+	return 1;
+'''
+
+			out += '}\n\n'
+
 		if self.constructor:
 			out += '''static SQInteger __constructor_%s(HSQUIRRELVM v) {
 	SQUserPointer self_ptr = nullptr;
@@ -190,7 +357,7 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			if self._inline:
 				out += '''\
 	if (tmp->obj == (void *)tmp->inline_obj) {
-		init_wrapped_Object(self, %s, (void *)self->inline_obj);
+		init_wrapped_Object(self, v, %s, (void *)self->inline_obj);
 ''' % self.type_tag
 
 				if self._non_copyable and self._moveable:
@@ -208,6 +375,8 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 				out += '\t*self = *tmp;\n'
 
 			out += '''\
+	tmp->vm = nullptr;
+	tmp->on_release_cache = nullptr;
 	tmp->on_delete = nullptr;
 	tmp->obj = nullptr;
 	tmp->magic_u32 = 0;
@@ -252,6 +421,9 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			delete_code = 'w->on_delete = &delete_inline_%s;' % self.bound_name
 
 		out += '''SQInteger %s(HSQUIRRELVM v, void *obj, OwnershipPolicy own) {
+	if (own == NonOwning && push_cached_%s_instance(v, obj))
+		return 1;
+
 	SQInteger top = sq_gettop(v);
 
 	sq_pushroottable(v);
@@ -281,7 +453,11 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 	auto w = (wrapped_Object *)instance_ptr;
 	if (own == Copy)
 		%s
-	init_wrapped_Object(w, %s, obj);
+	init_wrapped_Object(w, v, %s, obj);
+	if (own == NonOwning) {
+		w->on_release_cache = &release_cached_%s_instance;
+		cache_%s_instance(v, obj);
+	}
 	if (own != NonOwning)
 		%s
 	sq_setreleasehook(v, -1, wrapped_Object_releasehook);
@@ -292,6 +468,7 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 	return 1;
 }\n''' % (
 			self.from_c_func,
+			self.bound_name,
 			_escape_sq_string(module_name),
 			_escape_sq_string(module_name),
 			_escape_sq_string(self.bound_name),
@@ -301,6 +478,8 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			_escape_sq_string(self.bound_name),
 			copy_code,
 			self.type_tag,
+			self.bound_name,
+			self.bound_name,
 			delete_code
 		)
 
@@ -348,6 +527,30 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			out += '\t\treturn SQ_ERROR;\n'
 			out += '\t}\n\n'
 
+		if len(all_static_members) > 0:
+			out += '\t// static data member accessors\n'
+			for member in all_static_members:
+				member_bound_name = _get_default_bound_name(str(member['name']))
+				getter_bound_name = 'get_%s' % member_bound_name
+				out += '\tsq_pushstring(v, _SC("%s"), -1);\n' % _escape_sq_string(getter_bound_name)
+				out += '\tsq_newclosure(v, %s, 0);\n' % member['getter']
+				out += '\tsq_setnativeclosurename(v, -1, _SC("%s"));\n' % _escape_sq_string(getter_bound_name)
+				out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+				out += '\t\tsq_settop(v, top);\n'
+				out += '\t\treturn SQ_ERROR;\n'
+				out += '\t}\n'
+
+				if member['setter']:
+					setter_bound_name = 'set_%s' % member_bound_name
+					out += '\tsq_pushstring(v, _SC("%s"), -1);\n' % _escape_sq_string(setter_bound_name)
+					out += '\tsq_newclosure(v, %s, 0);\n' % member['setter']
+					out += '\tsq_setnativeclosurename(v, -1, _SC("%s"));\n' % _escape_sq_string(setter_bound_name)
+					out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+					out += '\t\tsq_settop(v, top);\n'
+					out += '\t\treturn SQ_ERROR;\n'
+					out += '\t}\n'
+			out += '\n'
+
 		if len(all_methods) > 0:
 			out += '\t// methods\n'
 			for method in all_methods:
@@ -359,6 +562,30 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 				out += '\t\treturn SQ_ERROR;\n'
 				out += '\t}\n'
 			out += '\n'
+
+		if len(self.arithmetic_ops) > 0:
+			out += '\t// arithmetic metamethods\n'
+			for arithmetic_op in self.arithmetic_ops:
+				if arithmetic_op['op'] not in sq_arithmetic_metamethods:
+					continue
+				out += '\tsq_pushstring(v, _SC("%s"), -1);\n' % sq_arithmetic_metamethods[arithmetic_op['op']]
+				out += '\tsq_newclosure(v, %s, 0);\n' % arithmetic_op['proxy_name']
+				out += '\tsq_setnativeclosurename(v, -1, _SC("%s"));\n' % sq_arithmetic_metamethods[arithmetic_op['op']]
+				out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+				out += '\t\tsq_settop(v, top);\n'
+				out += '\t\treturn SQ_ERROR;\n'
+				out += '\t}\n'
+			out += '\n'
+
+		if len(comparison_ops) > 0:
+			out += '\t// comparison metamethods\n'
+			out += '\tsq_pushstring(v, _SC("_cmp"), -1);\n'
+			out += '\tsq_newclosure(v, __cmp_%s_instance, 0);\n' % self.bound_name
+			out += '\tsq_setnativeclosurename(v, -1, _SC("_cmp"));\n'
+			out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+			out += '\t\tsq_settop(v, top);\n'
+			out += '\t\treturn SQ_ERROR;\n'
+			out += '\t}\n\n'
 
 		out += '\tsq_push(v, module_idx);\n'
 		out += '\tsq_pushstring(v, _SC("%s"), -1);\n' % _escape_sq_string(self.bound_name)
@@ -466,6 +693,7 @@ class SquirrelGenerator(gen.FABGen):
 
 	def start(self, module_name):
 		super().start(module_name)
+		self.add_include('memory', True)
 
 		self._header += '''extern "C" {
 #include "squirrel.h"
@@ -480,15 +708,19 @@ typedef struct {
 	void *obj;
 	char inline_obj[16]; // storage for inline objects
 
+	HSQUIRRELVM vm;
+	void (*on_release_cache)(HSQUIRRELVM, void *);
 	void (*on_delete)(void *);
 } wrapped_Object;
 
-static void init_wrapped_Object(wrapped_Object *o, uint32_t type_tag, void *obj) {
+static void init_wrapped_Object(wrapped_Object *o, HSQUIRRELVM vm, uint32_t type_tag, void *obj) {
 	o->magic_u32 = 0x46414221;
 	o->type_tag = type_tag;
 
 	o->obj = obj;
 
+	o->vm = vm;
+	o->on_release_cache = nullptr;
 	o->on_delete = nullptr;
 }
 
@@ -511,6 +743,8 @@ static wrapped_Object *cast_to_wrapped_Object_unsafe(HSQUIRRELVM v, SQInteger id
 
 static SQInteger wrapped_Object_releasehook(SQUserPointer p, SQInteger size) {
 	auto w = (wrapped_Object *)p;
+	if (w && w->on_release_cache && w->vm && w->obj)
+		w->on_release_cache(w->vm, w->obj);
 	if (w && w->on_delete)
 		w->on_delete(w->obj);
 	return 0;
@@ -519,37 +753,64 @@ static SQInteger wrapped_Object_releasehook(SQUserPointer p, SQInteger size) {
 '''
 
 		self._source += '''
+struct SquirrelVMRef {
+	HSQUIRRELVM vm{nullptr};
+	bool alive{true};
+};
+
+static std::map<HSQUIRRELVM, std::shared_ptr<SquirrelVMRef>> __squirrel_vm_refs;
+
+static std::shared_ptr<SquirrelVMRef> acquire_squirrel_vm_ref(HSQUIRRELVM v) {
+	auto &vm_ref = __squirrel_vm_refs[v];
+	if (!vm_ref) {
+		vm_ref = std::make_shared<SquirrelVMRef>();
+		vm_ref->vm = v;
+	}
+	return vm_ref;
+}
+
+static void release_squirrel_vm_ref(HSQUIRRELVM v) {
+	auto vm_ref = __squirrel_vm_refs.find(v);
+	if (vm_ref == __squirrel_vm_refs.end())
+		return;
+
+	vm_ref->second->alive = false;
+	__squirrel_vm_refs.erase(vm_ref);
+}
+
 class SquirrelValueRef {
 public:
-	SquirrelValueRef(HSQUIRRELVM v, SQInteger idx) : vm(v) {
+	SquirrelValueRef(HSQUIRRELVM v, SQInteger idx) : vm_ref(acquire_squirrel_vm_ref(v)) {
 		sq_resetobject(&value);
 		sq_resetobject(&env);
 
-		sq_getstackobj(vm, idx, &value);
-		sq_addref(vm, &value);
+		sq_getstackobj(vm_ref->vm, idx, &value);
+		sq_addref(vm_ref->vm, &value);
 
-		if (SQ_SUCCEEDED(sq_getclosureroot(vm, idx))) {
-			sq_getstackobj(vm, -1, &env);
-			sq_addref(vm, &env);
-			sq_poptop(vm);
+		if (SQ_SUCCEEDED(sq_getclosureroot(vm_ref->vm, idx))) {
+			sq_getstackobj(vm_ref->vm, -1, &env);
+			sq_addref(vm_ref->vm, &env);
+			sq_poptop(vm_ref->vm);
 		} else {
-			sq_pushroottable(vm);
-			sq_getstackobj(vm, -1, &env);
-			sq_addref(vm, &env);
-			sq_poptop(vm);
+			sq_pushroottable(vm_ref->vm);
+			sq_getstackobj(vm_ref->vm, -1, &env);
+			sq_addref(vm_ref->vm, &env);
+			sq_poptop(vm_ref->vm);
 		}
 	}
 
 	~SquirrelValueRef() {
-		sq_release(vm, &value);
-		sq_release(vm, &env);
+		if (!vm_ref || !vm_ref->alive)
+			return;
+		sq_release(vm_ref->vm, &value);
+		sq_release(vm_ref->vm, &env);
 	}
 
 	const HSQOBJECT &GetValue() const { return value; }
 	const HSQOBJECT &GetEnv() const { return env; }
 
 private:
-	HSQUIRRELVM vm{nullptr};
+	std::shared_ptr<SquirrelVMRef> vm_ref;
 	HSQOBJECT value;
 	HSQOBJECT env;
 };
@@ -676,13 +937,16 @@ struct %s {
 
 		create_module_func = gen.apply_api_prefix('create_%s' % self._name)
 		bind_module_func = gen.apply_api_prefix('bind_%s' % self._name)
+		release_module_func = gen.apply_api_prefix('release_%s' % self._name)
 		classes_to_register = [type for type in self._bound_types if isinstance(type, SquirrelClassTypeConverter)]
 		has_bound_variables = len(self._bound_variables) > 0
 
 		self._header += '// create the module object and push it onto the stack\n'
 		self._header += 'SQRESULT %s(HSQUIRRELVM v);\n' % create_module_func
 		self._header += '// create the module object and register it into the interpreter root table\n'
-		self._header += 'SQRESULT %s(HSQUIRRELVM v, const SQChar *symbol);\n\n' % bind_module_func
+		self._header += 'SQRESULT %s(HSQUIRRELVM v, const SQChar *symbol);\n' % bind_module_func
+		self._header += '// release VM-bound references tracked by the binding before sq_close\n'
+		self._header += 'void %s(HSQUIRRELVM v);\n\n' % release_module_func
 
 		if not self.embedded:
 			self._source += '''\
@@ -800,6 +1064,17 @@ struct %s {
 		self._source += '\t}\n'
 		self._source += '\tsq_pop(v, 2);\n'
 		self._source += '\treturn SQ_OK;\n'
+		self._source += '}\n\n'
+
+		self._source += 'void %s(HSQUIRRELVM v) {\n' % release_module_func
+		if self._custom_free_code:
+			self._source += '\t// custom cleanup code\n'
+			self._source += self._custom_free_code
+			if not self._custom_free_code.endswith('\n'):
+				self._source += '\n'
+		for type in classes_to_register:
+			self._source += '\trelease_cached_%s_instances(v);\n' % type.bound_name
+		self._source += '\trelease_squirrel_vm_ref(v);\n'
 		self._source += '}\n\n'
 
 		if not self.embedded:
