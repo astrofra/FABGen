@@ -54,6 +54,14 @@ b = my_test.Cast_base_class_To_derived_class(a)
 assert(b.u == 7)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local a = my_test.GetBaseClass();
+local b = my_test.Cast_base_class_To_derived_class(a);
+assert(b.u == 7);
+'''
+
 test_go = '''\
 package mytest
 

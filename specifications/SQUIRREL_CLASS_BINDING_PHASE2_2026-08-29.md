@@ -2,6 +2,9 @@
 
 Date: Saturday, August 29, 2026
 
+Update on Sunday, August 30, 2026:
+Inheritance-focused Squirrel tests were added and validated. The full Squirrel suite now stands at `28 run, 0 failed, 2 skipped`.
+
 ## Scope
 
 This phase extended the initial Squirrel MVP with a first functional class binding layer, still keeping the work focused on FABGen itself rather than Harfang integration.
@@ -81,6 +84,8 @@ Updated tests:
 - `tests/function_template_call.py`
 - `tests/method_route_feature.py`
 - `tests/repr.py`
+- `tests/struct_inheritance.py`
+- `tests/struct_inheritance_cast.py`
 - `tests/function_call.py`
 - `tests/return_nullptr_as_none.py`
 - `tests/shared_ptr.py`
@@ -122,6 +127,10 @@ New Squirrel coverage now validates:
 - Comparing distinct wrapped `std::shared_ptr<T>` handles that refer to the same underlying pointee through default Squirrel `<=>` support.
 - Using class arithmetic metamethods (`_add`, `_sub`, `_mul`, `_div`) on bound objects.
 - Using class comparison support through `_cmp`, including equality-style checks with `<=>`.
+- Passing derived wrapped objects to APIs typed as base-class references or pointers.
+- Reusing inherited methods and inherited members on derived Squirrel bindings.
+- Preserving virtual dispatch when a derived instance is passed through a base-class API.
+- Using generated downcast helper functions such as `Cast_base_class_To_derived_class(...)`.
 - Accessing module-level bound variables from Squirrel.
 - Accessing named enumeration values from Squirrel.
 - Accessing and mutating bitfield-backed members from Squirrel.
@@ -187,6 +196,17 @@ Result:
 
 - `2 run, 0 failed`
 
+Additional Squirrel inheritance test commands validated on Sunday, August 30, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_inheritance
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_inheritance_cast
+```
+
+Result:
+
+- `2 run, 0 failed`
+
 Additional object-port test commands validated later on Saturday, August 29, 2026:
 
 ```powershell
@@ -234,9 +254,9 @@ Full currently-enabled Squirrel suite:
 python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 ```
 
-Result on Saturday, August 29, 2026:
+Result on Sunday, August 30, 2026:
 
-- `26 run, 0 failed, 4 skipped`
+- `28 run, 0 failed, 2 skipped`
 
 Passing Squirrel tests:
 
@@ -257,6 +277,8 @@ Passing Squirrel tests:
 - `struct_bitfield_member_access`
 - `struct_default_comparison`
 - `struct_exchange`
+- `struct_inheritance`
+- `struct_inheritance_cast`
 - `struct_instantiation`
 - `struct_member_access`
 - `struct_method_call`
@@ -284,8 +306,6 @@ The remaining skipped tests at this point are:
 
 - `extern_type`
 - `std_future`
-- `struct_inheritance`
-- `struct_inheritance_cast`
 
 ## Static Data Member Policy
 
@@ -357,6 +377,7 @@ At this point it can validate the core object workflow required for the first in
 - call bound function-template instantiations,
 - exercise routed method bindings,
 - create and use wrapped C++ class instances from Squirrel,
+- use base/derived class relationships through FABGen cast rules and inherited bindings,
 - use proxied `std::shared_ptr<T>` wrappers, including null returns and deep comparison through `<=>`,
 - expose derived wrapped instances through `rval_transform`,
 - stringify wrapped class instances through `_tostring`,
