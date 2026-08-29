@@ -17,6 +17,7 @@ The immediate goal was practical:
 Updated file:
 
 - `lang/squirrel.py`
+- `gen.py`
 
 The Squirrel backend now supports a first working class model based on native Squirrel classes and instances:
 
@@ -29,6 +30,10 @@ The Squirrel backend now supports a first working class model based on native Sq
 - Instance methods and static methods registered as native class slots.
 - C++ to Squirrel object conversion through `sq_createinstance()`.
 - Squirrel to C++ object conversion with FABGen type-tag cast checks.
+
+The supporting generator layer also received one correctness fix:
+
+- `bind_variable()` now qualifies generated C++ variable access with `::` so global variables do not collide with the Squirrel VM parameter name `v` in generated proxies.
 
 ## Constructor Model
 
@@ -54,6 +59,9 @@ Updated tests:
 - `tests/struct_member_access.py`
 - `tests/struct_method_call.py`
 - `tests/struct_exchange.py`
+- `tests/variable_access.py`
+- `tests/struct_bitfield_member_access.py`
+- `tests/struct_nesting.py`
 
 New Squirrel coverage now validates:
 
@@ -62,6 +70,9 @@ New Squirrel coverage now validates:
 - Calling bound instance methods and static methods from Squirrel.
 - Passing wrapped objects between Squirrel and C++ by value, pointer, and reference.
 - Returning wrapped objects from C++ back to Squirrel.
+- Accessing module-level bound variables from Squirrel.
+- Accessing and mutating bitfield-backed members from Squirrel.
+- Accessing nested bound objects through wrapped member references.
 
 ## Validation Results
 
@@ -82,6 +93,18 @@ Result:
 
 - `4 run, 0 failed`
 
+Additional object-port test commands validated later on Saturday, August 29, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug variable_access
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_bitfield_member_access
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_nesting
+```
+
+Result:
+
+- `3 run, 0 failed`
+
 Full currently-enabled Squirrel suite:
 
 ```powershell
@@ -90,17 +113,20 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Saturday, August 29, 2026:
 
-- `7 run, 0 failed, 23 skipped`
+- `10 run, 0 failed, 20 skipped`
 
 Passing Squirrel tests:
 
 - `basic_type_exchange`
 - `script_collection_exchange`
 - `std_function`
+- `struct_bitfield_member_access`
 - `struct_exchange`
 - `struct_instantiation`
 - `struct_member_access`
 - `struct_method_call`
+- `struct_nesting`
+- `variable_access`
 
 ## Current Limits
 

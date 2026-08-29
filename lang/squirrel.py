@@ -599,12 +599,17 @@ struct %s {
 }\n\n''' % (type_info_name, gen.apply_api_prefix('get_c_type_info'))
 
 	def finalize(self):
+		if len(self._bound_variables) > 0:
+			self.add_include('string', True)
+
 		super().finalize()
 
 		self.output_binding_api()
 
 		create_module_func = gen.apply_api_prefix('create_%s' % self._name)
 		bind_module_func = gen.apply_api_prefix('bind_%s' % self._name)
+		classes_to_register = [type for type in self._bound_types if isinstance(type, SquirrelClassTypeConverter)]
+		has_bound_variables = len(self._bound_variables) > 0
 
 		self._header += '// create the module object and push it onto the stack\n'
 		self._header += 'SQRESULT %s(HSQUIRRELVM v);\n' % create_module_func
@@ -620,18 +625,73 @@ struct %s {
 #endif
 \n'''
 
+		if has_bound_variables:
+			self._source += build_index_map('__get_%s_var_map' % self._name, self._bound_variables, lambda v: True, lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(v['bound_name']), v['getter']))
+			self._source += build_index_map('__set_%s_var_map' % self._name, self._bound_variables, lambda v: v['setter'], lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(v['bound_name']), v['setter']))
+
+			self._source += '''static SQInteger __get_%s_var(HSQUIRRELVM v) {
+	if (sq_gettype(v, 2) == OT_STRING) {
+		const SQChar *key_cstr = nullptr;
+		sq_getstring(v, 2, &key_cstr);
+		std::basic_string<SQChar> key = key_cstr;
+
+		auto i = __get_%s_var_map.find(key);
+		if (i != __get_%s_var_map.end()) {
+			sq_remove(v, 2);
+			return i->second(v);
+		}
+	}
+
+	sq_pushnull(v);
+	return sq_throwobject(v);
+}\n\n''' % (self._name, self._name, self._name)
+
+			self._source += '''static SQInteger __set_%s_var(HSQUIRRELVM v) {
+	if (sq_gettype(v, 2) == OT_STRING) {
+		const SQChar *key_cstr = nullptr;
+		sq_getstring(v, 2, &key_cstr);
+		std::basic_string<SQChar> key = key_cstr;
+
+		auto i = __set_%s_var_map.find(key);
+		if (i != __set_%s_var_map.end()) {
+			sq_remove(v, 2);
+			return i->second(v);
+		}
+	}
+
+	sq_pushnull(v);
+	return sq_throwobject(v);
+}\n\n''' % (self._name, self._name, self._name)
+
 		self._source += 'SQRESULT %s(HSQUIRRELVM v) {\n' % create_module_func
 		self._source += '\t__initialize_type_tag_infos();\n'
 		self._source += '\t__initialize_type_infos();\n\n'
 		self._source += '\t// custom initialization code\n'
 		self._source += self._custom_init_code
 		self._source += '\n'
-		self._source += '\tsq_newtable(v);\n\n'
+		self._source += '\tsq_newtable(v);\n'
+		if has_bound_variables or len(classes_to_register) > 0:
+			self._source += '\tSQInteger module_idx = sq_gettop(v);\n'
+		self._source += '\n'
 
-		classes_to_register = [type for type in self._bound_types if isinstance(type, SquirrelClassTypeConverter)]
+		if has_bound_variables:
+			self._source += '\t// bind variable lookup delegate\n'
+			self._source += '\tsq_newtable(v);\n'
+			self._source += '\tsq_pushstring(v, _SC("_get"), -1);\n'
+			self._source += '\tsq_newclosure(v, __get_%s_var, 0);\n' % self._name
+			self._source += '\tsq_setnativeclosurename(v, -1, _SC("_get"));\n'
+			self._source += '\tif (SQ_FAILED(sq_newslot(v, -3, SQFalse)))\n'
+			self._source += '\t\treturn SQ_ERROR;\n'
+			self._source += '\tsq_pushstring(v, _SC("_set"), -1);\n'
+			self._source += '\tsq_newclosure(v, __set_%s_var, 0);\n' % self._name
+			self._source += '\tsq_setnativeclosurename(v, -1, _SC("_set"));\n'
+			self._source += '\tif (SQ_FAILED(sq_newslot(v, -3, SQFalse)))\n'
+			self._source += '\t\treturn SQ_ERROR;\n'
+			self._source += '\tif (SQ_FAILED(sq_setdelegate(v, module_idx)))\n'
+			self._source += '\t\treturn SQ_ERROR;\n\n'
+
 		if len(classes_to_register) > 0:
 			self._source += '\t// register bound classes\n'
-			self._source += '\tSQInteger module_idx = sq_gettop(v);\n'
 			for type in classes_to_register:
 				self._source += '\tif (SQ_FAILED(register_%s(v, module_idx)))\n' % type.bound_name
 				self._source += '\t\treturn SQ_ERROR;\n'
