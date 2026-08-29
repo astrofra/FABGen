@@ -198,12 +198,14 @@ local my_test = ::my_test;
 local v = my_test.vector_of_int();
 
 assert(v.size() == 0);
+assert(v.len() == 0);
 
 v.push_back(5);
 v.push_back(1);
 v.push_back(9);
 
 assert(v.size() == 3);
+assert(v.len() == 3);
 
 assert(v.at(1) == 1);
 assert(v.at(2) == 9);
@@ -231,12 +233,26 @@ local w = my_test.vector_of_int([5, 2, 8]);
 assert(w[0] == 5);
 assert(w[1] == 2);
 assert(w[2] == 8);
+assert(w.len() == 3);
+
+local seq_sum = 0;
+foreach (value in w) {
+	seq_sum += value;
+}
+assert(seq_sum == 15);
+
+local seq_indexed_sum = 0;
+foreach (idx, value in w) {
+	seq_indexed_sum += idx * 10 + value;
+}
+assert(seq_indexed_sum == 45);
 
 local v_ptr = my_test.vector_of_int_ptr();
 v_ptr.push_back(0);
 v_ptr.push_back(v.data());
 
 assert(v_ptr.size() == 2);
+assert(v_ptr.len() == 2);
 '''
 
 test_go = '''\

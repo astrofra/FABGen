@@ -33,10 +33,11 @@ The Squirrel backend now supports a first working class model based on native Sq
 - Reuse of the same Squirrel proxy for repeated non-owning returns of the same C++ object.
 - Arithmetic metamethod binding for `_add`, `_sub`, `_mul`, and `_div`.
 - Comparison support through `_cmp` for class-to-class comparisons.
+- Sequence-aware classes now expose an explicit `len()` method and a generated `_nexti` metamethod for `foreach` iteration.
 - Safe tracked-VM shutdown through a generated `gen_release_<module>(v)` helper called before `sq_close(v)`, which avoids dangling callback releases during process teardown.
 - C++ to Squirrel object conversion through `sq_createinstance()`.
 - Squirrel to C++ object conversion with FABGen type-tag cast checks.
-- Minimal sequence-style `_get` and `_set` support for wrapped classes with the FABGen `sequence` feature.
+- Sequence-style `_get` and `_set` support for wrapped classes with the FABGen `sequence` feature.
 
 The supporting generator layer also received one correctness fix:
 
@@ -86,6 +87,8 @@ New Squirrel coverage now validates:
 - Null pointer returns mapped to Squirrel `null`.
 - `std::vector<int>` construction from a Squirrel array.
 - Integer-index reads and writes on wrapped sequence-like objects.
+- Explicit `len()` calls on wrapped sequence-like objects.
+- `foreach` iteration on wrapped sequence-like objects through `_nexti`.
 - Implicit cast from a wrapped `std::vector<int>` object to `int *` through FABGen cast rules.
 - Constructing bound classes from Squirrel.
 - Reading and writing bound C++ struct members from Squirrel.
@@ -142,6 +145,11 @@ Result:
 
 - `2 run, 0 failed`
 
+The `std_vector` Squirrel test was later extended and revalidated on Saturday, August 29, 2026 to cover:
+
+- `len()` on wrapped `std::vector` instances,
+- `foreach` iteration over wrapped `std::vector` instances through `_nexti`.
+
 Additional Squirrel class feature test commands validated later on Saturday, August 29, 2026:
 
 ```powershell
@@ -191,7 +199,7 @@ This is an intentionally small phase 2 slice, not full Lua parity yet.
 Known limits after this step:
 
 - Direct class-side property writes such as `MyType.value = ...` are still blocked by the Squirrel VM object model. Mutable static data members are exposed through `MyType.get_value()` / `MyType.set_value(v)` instead.
-- Sequence support is intentionally minimal: integer `_get/_set` works for FABGen `sequence` classes, but `len`, `_nexti`, and richer container behaviors are still missing.
+- Sequence support still does not try to emulate every built-in container behavior. It now covers integer `_get/_set`, explicit `len()`, and `foreach` through `_nexti`, but richer parity with native Squirrel containers is still incomplete.
 - Squirrel `==` and `!=` on distinct class instances remain identity-based in the VM itself. FABGen now preserves identity for repeated non-owning returns, but value-based equality on separate wrapped instances must currently use `<=>` through `_cmp`. Mixed comparisons such as `instance <=> 4` are still blocked by the VM dispatch rules and do not reach `_cmp`.
 - The class `from_c` path currently assumes the generated module has been bound into the Squirrel root table.
 - Broader historical FABGen tests still need `test_squirrel` coverage before they can validate the class backend more deeply.
@@ -234,11 +242,11 @@ At this point it can validate the core object workflow required for the first in
 - exchange primitive values, arrays, and tables,
 - call C++ from Squirrel,
 - call Squirrel callbacks from C++,
-- create and use wrapped C++ class instances from Squirrel.
+- create and use wrapped C++ class instances from Squirrel,
+- iterate wrapped sequence-like classes from Squirrel with `foreach`.
 
 ## Recommended Next Steps
 
 - Keep the explicit static accessor policy unless a custom Squirrel runtime is accepted.
-- Add richer sequence support for Squirrel classes, especially `len` and iteration.
-- Add Squirrel support for sequence features on wrapped classes.
+- Add richer sequence parity beyond `len()` and `foreach`, only where the Squirrel VM model makes it worthwhile.
 - Add inheritance-specific Squirrel tests once class inheritance behavior is intentionally designed.

@@ -68,6 +68,7 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 		all_static_members = self.get_all_static_members()
 		all_methods = self.get_all_methods() + self.get_all_static_methods()
 		has_mutable_members = any(member['setter'] for member in all_members)
+		has_len_method = any(method['bound_name'] == 'len' for method in all_methods)
 		comparison_ops = {op['op']: op for op in self.comparison_ops}
 		sq_arithmetic_metamethods = {'+': '_add', '-': '_sub', '*': '_mul', '/': '_div'}
 
@@ -75,6 +76,39 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 		out += build_index_map('__set_member_map_%s' % self.bound_name, all_members, lambda v: v['setter'], lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['setter']))
 
 		if has_sequence:
+			out += 'static SQInteger __len_%s_instance(HSQUIRRELVM v) {\n' % self.bound_name
+			out += gen._prepare_to_c_self(self, '_self')
+			out += '\tSQInteger size = 0;\n'
+			out += seq.get_size('_self', 'size')
+			out += '\tsq_pushinteger(v, size);\n'
+			out += '\treturn 1;\n'
+			out += '}\n\n'
+
+			out += 'static SQInteger __nexti_%s_instance(HSQUIRRELVM v) {\n' % self.bound_name
+			out += gen._prepare_to_c_self(self, '_self')
+			out += '\tSQInteger size = 0;\n'
+			out += seq.get_size('_self', 'size')
+			out += '\tSQInteger next_idx = 0;\n'
+			out += '''\
+	if (sq_gettype(v, 2) == OT_NULL) {
+		next_idx = 0;
+	} else if (sq_gettype(v, 2) == OT_INTEGER) {
+		SQInteger idx = 0;
+		sq_getinteger(v, 2, &idx);
+		next_idx = idx + 1;
+	} else {
+		return sq_throwerror(v, _SC("invalid iteration index"));
+	}
+
+	if (next_idx < 0 || next_idx >= size) {
+		sq_pushnull(v);
+		return 1;
+	}
+
+	sq_pushinteger(v, next_idx);
+	return 1;
+}\n\n'''
+
 			out += 'static SQInteger __seq_get_%s_instance(HSQUIRRELVM v) {\n' % self.bound_name
 			out += '\tSQInteger rval_count = 0;\n'
 			out += gen._prepare_to_c_self(self, '_self')
@@ -550,6 +584,24 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 					out += '\t\treturn SQ_ERROR;\n'
 					out += '\t}\n'
 			out += '\n'
+
+		if has_sequence:
+			out += '\t// sequence helpers\n'
+			if not has_len_method:
+				out += '\tsq_pushstring(v, _SC("len"), -1);\n'
+				out += '\tsq_newclosure(v, __len_%s_instance, 0);\n' % self.bound_name
+				out += '\tsq_setnativeclosurename(v, -1, _SC("len"));\n'
+				out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+				out += '\t\tsq_settop(v, top);\n'
+				out += '\t\treturn SQ_ERROR;\n'
+				out += '\t}\n'
+			out += '\tsq_pushstring(v, _SC("_nexti"), -1);\n'
+			out += '\tsq_newclosure(v, __nexti_%s_instance, 0);\n' % self.bound_name
+			out += '\tsq_setnativeclosurename(v, -1, _SC("_nexti"));\n'
+			out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+			out += '\t\tsq_settop(v, top);\n'
+			out += '\t\treturn SQ_ERROR;\n'
+			out += '\t}\n\n'
 
 		if len(all_methods) > 0:
 			out += '\t// methods\n'
