@@ -32,6 +32,13 @@ assert(my_test.get_int() == 8)
 assert(my_test.get_float() == 8)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+assert(my_test.get_int() == 8);
+assert(my_test.get_float() == 8);
+'''
+
 test_go = """\
 package mytest
 

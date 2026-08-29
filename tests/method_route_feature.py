@@ -10,7 +10,7 @@ def bind_test(gen):
 struct Object { int a{11}; };
 
 int ObjectGet(Object *o, int v) { return o->a + v; }
-\n''')
+\n''', True, False)
 
 	obj = gen.begin_class('Object')
 
@@ -39,6 +39,13 @@ o = my_test.Object()
 assert(o:Get(4) == 15)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local o = my_test.Object();
+assert(o.Get(4) == 15);
+'''
+
 test_go = """\
 package mytest
 
@@ -53,4 +60,3 @@ func Test(t *testing.T) {
 	assert.Equal(t, o.Get(4), int32(15), "should be the same.")
 }
 """
-

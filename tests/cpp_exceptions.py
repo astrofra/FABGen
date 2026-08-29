@@ -42,6 +42,20 @@ if pcall(my_test.get_int) then
 end
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local exception_raised = false;
+
+try {
+	my_test.get_int();
+} catch (e) {
+	exception_raised = true;
+}
+
+assert(exception_raised == true);
+'''
+
 test_go = '''\
 package mytest
 '''

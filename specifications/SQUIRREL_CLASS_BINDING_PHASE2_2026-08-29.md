@@ -73,7 +73,10 @@ This kept the implementation compatible with FABGen's existing constructor proxy
 Updated tests:
 
 - `tests/arg_out.py`
+- `tests/cpp_exceptions.py`
 - `tests/enumeration.py`
+- `tests/function_template_call.py`
+- `tests/method_route_feature.py`
 - `tests/repr.py`
 - `tests/function_call.py`
 - `tests/return_nullptr_as_none.py`
@@ -85,6 +88,8 @@ Updated tests:
 - `tests/struct_operator_call.py`
 - `tests/struct_static_const_member_access.py`
 - `tests/struct_exchange.py`
+- `tests/template_struct_nesting.py`
+- `tests/transform_rval.py`
 - `tests/variable_access.py`
 - `tests/struct_bitfield_member_access.py`
 - `tests/struct_nesting.py`
@@ -93,6 +98,7 @@ New Squirrel coverage now validates:
 
 - Global C++ function calls from Squirrel, including overload resolution and optional arguments.
 - `arg_out` and `arg_in_out` behavior from Squirrel.
+- Native C++ exception translation into Squirrel runtime errors.
 - Null pointer returns mapped to Squirrel `null`.
 - `std::vector<int>` construction from a Squirrel array.
 - Integer-index reads and writes on wrapped sequence-like objects.
@@ -102,6 +108,7 @@ New Squirrel coverage now validates:
 - Constructing bound classes from Squirrel.
 - Reading and writing bound C++ struct members from Squirrel.
 - Calling bound instance methods and static methods from Squirrel.
+- Calling bound methods using the FABGen `route` feature.
 - Accessing bound static data members from Squirrel through explicit generated accessors.
 - Passing wrapped objects between Squirrel and C++ by value, pointer, and reference.
 - Returning wrapped objects from C++ back to Squirrel.
@@ -112,6 +119,9 @@ New Squirrel coverage now validates:
 - Accessing named enumeration values from Squirrel.
 - Accessing and mutating bitfield-backed members from Squirrel.
 - Accessing nested bound objects through wrapped member references.
+- Accessing nested template-instantiated structs from Squirrel.
+- Calling explicitly bound C++ function template instantiations from Squirrel.
+- Applying `rval_transform` to return derived wrapped objects from a base-pointer API.
 - String conversion of wrapped class instances through `_tostring`, `tostring()`, and string concatenation.
 
 ## Validation Results
@@ -144,6 +154,20 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug repr
 Result:
 
 - `3 run, 0 failed`
+
+Additional Squirrel exception/template/route/transform test commands validated later on Saturday, August 29, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug cpp_exceptions
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug function_template_call
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug method_route_feature
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug template_struct_nesting
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug transform_rval
+```
+
+Result:
+
+- `5 run, 0 failed`
 
 Additional object-port test commands validated later on Saturday, August 29, 2026:
 
@@ -194,14 +218,17 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Saturday, August 29, 2026:
 
-- `19 run, 0 failed, 11 skipped`
+- `24 run, 0 failed, 6 skipped`
 
 Passing Squirrel tests:
 
 - `arg_out`
 - `basic_type_exchange`
+- `cpp_exceptions`
 - `enumeration`
 - `function_call`
+- `function_template_call`
+- `method_route_feature`
 - `repr`
 - `return_nullptr_as_none`
 - `script_collection_exchange`
@@ -216,6 +243,8 @@ Passing Squirrel tests:
 - `struct_nesting`
 - `struct_operator_call`
 - `struct_static_const_member_access`
+- `template_struct_nesting`
+- `transform_rval`
 - `variable_access`
 
 ## Current Limits
@@ -230,6 +259,15 @@ Known limits after this step:
 - Squirrel `==` and `!=` on distinct class instances remain identity-based in the VM itself. FABGen now preserves identity for repeated non-owning returns, but value-based equality on separate wrapped instances must currently use `<=>` through `_cmp`. Mixed comparisons such as `instance <=> 4` are still blocked by the VM dispatch rules and do not reach `_cmp`.
 - The class `from_c` path currently assumes the generated module has been bound into the Squirrel root table.
 - Broader historical FABGen tests still need `test_squirrel` coverage before they can validate the class backend more deeply.
+
+The remaining skipped tests at this point are:
+
+- `extern_type`
+- `shared_ptr`
+- `shared_ptr_default_comparison`
+- `std_future`
+- `struct_inheritance`
+- `struct_inheritance_cast`
 
 ## Static Data Member Policy
 
@@ -285,8 +323,12 @@ At this point it can validate the core object workflow required for the first in
 - exchange named enum values,
 - call C++ from Squirrel,
 - call Squirrel callbacks from C++,
+- propagate native C++ exceptions into Squirrel failures,
 - use `arg_out` / `arg_in_out` within the VM's single-return model,
+- call bound function-template instantiations,
+- exercise routed method bindings,
 - create and use wrapped C++ class instances from Squirrel,
+- expose derived wrapped instances through `rval_transform`,
 - stringify wrapped class instances through `_tostring`,
 - iterate wrapped sequence-like classes from Squirrel with `foreach`.
 
