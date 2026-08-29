@@ -18,6 +18,7 @@ Updated file:
 
 - `lang/squirrel.py`
 - `gen.py`
+- `lib/squirrel/stl.py`
 
 The Squirrel backend now supports a first working class model based on native Squirrel classes and instances:
 
@@ -30,10 +31,15 @@ The Squirrel backend now supports a first working class model based on native Sq
 - Instance methods and static methods registered as native class slots.
 - C++ to Squirrel object conversion through `sq_createinstance()`.
 - Squirrel to C++ object conversion with FABGen type-tag cast checks.
+- Minimal sequence-style `_get` and `_set` support for wrapped classes with the FABGen `sequence` feature.
 
 The supporting generator layer also received one correctness fix:
 
 - `bind_variable()` now qualifies generated C++ variable access with `::` so global variables do not collide with the Squirrel VM parameter name `v` in generated proxies.
+
+The Squirrel STL layer also received one correctness fix:
+
+- `SquirrelArrayToStdVectorConverter` now uses `std::vector<T>` as its generated C++ storage type, which makes constructor overloads taking Squirrel arrays compile correctly.
 
 ## Constructor Model
 
@@ -55,6 +61,8 @@ This kept the implementation compatible with FABGen's existing constructor proxy
 
 Updated tests:
 
+- `tests/function_call.py`
+- `tests/std_vector.py`
 - `tests/struct_instantiation.py`
 - `tests/struct_member_access.py`
 - `tests/struct_method_call.py`
@@ -65,6 +73,10 @@ Updated tests:
 
 New Squirrel coverage now validates:
 
+- Global C++ function calls from Squirrel, including overload resolution and optional arguments.
+- `std::vector<int>` construction from a Squirrel array.
+- Integer-index reads and writes on wrapped sequence-like objects.
+- Implicit cast from a wrapped `std::vector<int>` object to `int *` through FABGen cast rules.
 - Constructing bound classes from Squirrel.
 - Reading and writing bound C++ struct members from Squirrel.
 - Calling bound instance methods and static methods from Squirrel.
@@ -105,6 +117,17 @@ Result:
 
 - `3 run, 0 failed`
 
+Additional Squirrel function and sequence test commands validated later on Saturday, August 29, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug function_call
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug std_vector
+```
+
+Result:
+
+- `2 run, 0 failed`
+
 Full currently-enabled Squirrel suite:
 
 ```powershell
@@ -113,13 +136,15 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Saturday, August 29, 2026:
 
-- `10 run, 0 failed, 20 skipped`
+- `12 run, 0 failed, 18 skipped`
 
 Passing Squirrel tests:
 
 - `basic_type_exchange`
+- `function_call`
 - `script_collection_exchange`
 - `std_function`
+- `std_vector`
 - `struct_bitfield_member_access`
 - `struct_exchange`
 - `struct_instantiation`
@@ -135,7 +160,7 @@ This is an intentionally small phase 2 slice, not full Lua parity yet.
 Known limits after this step:
 
 - Static data members are not exposed yet as Squirrel property-style fields.
-- Sequence-style class behavior is not implemented yet for Squirrel classes.
+- Sequence support is intentionally minimal: integer `_get/_set` works for FABGen `sequence` classes, but `len`, `_nexti`, and richer container behaviors are still missing.
 - Arithmetic and comparison metamethod binding for Squirrel classes is not implemented yet.
 - The class `from_c` path currently assumes the generated module has been bound into the Squirrel root table.
 - Broader historical FABGen tests still need `test_squirrel` coverage before they can validate the class backend more deeply.
@@ -154,7 +179,8 @@ At this point it can validate the core object workflow required for the first in
 
 ## Recommended Next Steps
 
-- Add Squirrel tests for `function_call` and `std_vector`.
 - Extend the class backend to support static data members.
+- Add Squirrel coverage for `return_nullptr_as_none`.
+- Add richer sequence support for Squirrel classes, especially `len` and iteration.
 - Add Squirrel support for sequence features on wrapped classes.
 - Add inheritance-specific Squirrel tests once class inheritance behavior is intentionally designed.

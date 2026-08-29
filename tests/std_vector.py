@@ -30,6 +30,9 @@ int consume_pointer_to_int(const int *p) {
 	elif gen.get_language() == 'Lua':
 		gen.bind_type(lib.lua.stl.LuaTableToStdVectorConverter('LuaTableOfInt', int_conv))
 		gen.bind_type(lib.lua.stl.LuaTableToStdVectorConverter('LuaTableOfInt_ptr', int_ptr))
+	elif gen.get_language() == 'Squirrel':
+		gen.bind_type(lib.squirrel.stl.SquirrelArrayToStdVectorConverter('SquirrelArrayOfInt', int_conv))
+		gen.bind_type(lib.squirrel.stl.SquirrelArrayToStdVectorConverter('SquirrelArrayOfInt_ptr', int_ptr))
 	elif gen.get_language() == 'Go':
 		gen.bind_type(lib.go.stl.GoSliceToStdVectorConverter('GoSliceOfInt', int_conv))
 		gen.bind_type(lib.go.stl.GoSliceToStdVectorConverter('GoSliceOfInt_ptr', int_ptr))
@@ -40,6 +43,8 @@ int consume_pointer_to_int(const int *p) {
 		gen.bind_constructor(std_vector_int, ['?PySequenceOfInt sequence'])
 	elif gen.get_language() == 'Lua':
 		gen.bind_constructor(std_vector_int, ['?LuaTableOfInt sequence'])
+	elif gen.get_language() == 'Squirrel':
+		gen.bind_constructor(std_vector_int, ['?SquirrelArrayOfInt sequence'])
 	elif gen.get_language() == 'Go':
 		gen.bind_constructor(std_vector_int, ['?GoSliceOfInt sequence'])
 
@@ -61,6 +66,8 @@ int consume_pointer_to_int(const int *p) {
 		gen.bind_constructor(std_vector_int_ptr, ['?PySequenceOfInt_ptr sequence'])
 	elif gen.get_language() == 'Lua':
 		gen.bind_constructor(std_vector_int_ptr, ['?LuaTableOfInt_ptr sequence'])
+	elif gen.get_language() == 'Squirrel':
+		gen.bind_constructor(std_vector_int_ptr, ['?SquirrelArrayOfInt_ptr sequence'])
 	elif gen.get_language() == 'Go':
 		gen.bind_constructor(std_vector_int_ptr, ['?GoSliceOfInt_ptr sequence'])
 
@@ -183,6 +190,53 @@ v_ptr:push_back(v:data())
 assert(v_ptr:size() == 2)
 assert(#v_ptr == 2)
 
+'''
+
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local v = my_test.vector_of_int();
+
+assert(v.size() == 0);
+
+v.push_back(5);
+v.push_back(1);
+v.push_back(9);
+
+assert(v.size() == 3);
+
+assert(v.at(1) == 1);
+assert(v.at(2) == 9);
+assert(v.at(0) == 5);
+
+assert(v[1] == 1);
+assert(v[2] == 9);
+assert(v[0] == 5);
+
+v[1] = 16;
+
+assert(v[2] == 9);
+assert(v[0] == 5);
+assert(v[1] == 16);
+
+v[0] = v[0] * 4;
+
+assert(v[0] == 20);
+
+assert(my_test.consume_pointer_to_int(v.data()) == 16);
+assert(my_test.consume_pointer_to_int(v) == 16);
+
+local w = my_test.vector_of_int([5, 2, 8]);
+
+assert(w[0] == 5);
+assert(w[1] == 2);
+assert(w[2] == 8);
+
+local v_ptr = my_test.vector_of_int_ptr();
+v_ptr.push_back(0);
+v_ptr.push_back(v.data());
+
+assert(v_ptr.size() == 2);
 '''
 
 test_go = '''\

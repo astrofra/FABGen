@@ -84,6 +84,24 @@ assert(my_test.get_global_int_multiplied() == 15)
 assert(my_test.get_global_int_multiplied(2) == 6)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+assert(my_test.get_int() == 8);
+
+assert(my_test.get_global_int() == 0);
+my_test.set_global_int();
+assert(my_test.get_global_int() == 8);
+
+assert(my_test.get() == 0);
+assert(my_test.get(2) == 1);
+assert(my_test.get(4, 3) == 12);
+assert(my_test.get(4, 3, 2) == 14);
+
+assert(my_test.get_global_int_multiplied() == 15);
+assert(my_test.get_global_int_multiplied(2) == 6);
+'''
+
 test_go = '''\
 package mytest
 

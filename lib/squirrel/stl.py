@@ -79,7 +79,8 @@ SQInteger %s(HSQUIRRELVM v, void *obj, OwnershipPolicy) {
 
 class SquirrelArrayToStdVectorConverter(lang.squirrel.SquirrelTypeConverterCommon):
 	def __init__(self, type, T_conv):
-		super().__init__(type, type, None, type)
+		native_type = 'std::vector<%s>' % T_conv.ctype
+		super().__init__(type, native_type, None, native_type)
 		self.T_conv = T_conv
 
 	def get_type_glue(self, gen, module_name):

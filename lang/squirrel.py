@@ -57,14 +57,59 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 
 		gen.add_include('string', True)
 
+		has_sequence = 'sequence' in self._features
+		seq = self._features['sequence'] if has_sequence else None
+
 		all_members = self.get_all_members()
 		all_methods = self.get_all_methods() + self.get_all_static_methods()
+		has_mutable_members = any(member['setter'] for member in all_members)
 
 		out += build_index_map('__get_member_map_%s' % self.bound_name, all_members, lambda v: True, lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['getter']))
 		out += build_index_map('__set_member_map_%s' % self.bound_name, all_members, lambda v: v['setter'], lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['setter']))
 
-		if len(all_members) > 0:
+		if has_sequence:
+			out += 'static SQInteger __seq_get_%s_instance(HSQUIRRELVM v) {\n' % self.bound_name
+			out += '\tSQInteger rval_count = 0;\n'
+			out += gen._prepare_to_c_self(self, '_self')
+			out += gen.prepare_to_c_var(0, gen.get_conv('int'), 'idx', 'getter')
+			out += gen.decl_var(seq.wrapped_conv.ctype, 'rval')
+			out += '\tbool error = false;\n'
+			out += seq.get_item('_self', 'idx', 'rval', 'error')
+			out += '''\
+	if (error)
+		return sq_throwerror(v, _SC("invalid lookup"));
+'''
+			out += gen.prepare_from_c_var({'conv': seq.wrapped_conv, 'ctype': seq.wrapped_conv.ctype, 'var': 'rval', 'is_arg_in_out': False, 'ownership': None})
+			out += gen.commit_from_c_vars(['rval'])
+			out += '\treturn rval_count;\n'
+			out += '}\n\n'
+
+			out += 'static SQInteger __seq_set_%s_instance(HSQUIRRELVM v) {\n' % self.bound_name
+			out += '\tSQInteger rval_count = 0;\n'
+			out += gen._prepare_to_c_self(self, '_self')
+			out += gen.prepare_to_c_var(0, gen.get_conv('int'), 'idx', 'setter')
+			out += gen.prepare_to_c_var(1, seq.wrapped_conv, 'cval', 'setter')
+			out += '\tbool error = false;\n'
+			out += seq.set_item('_self', 'idx', 'cval', 'error')
+			out += '''\
+	if (error)
+		return sq_throwerror(v, _SC("invalid assignation"));
+	return rval_count;
+}\n\n'''
+
+		if has_sequence or len(all_members) > 0:
 			out += '''static SQInteger __get_%s_instance(HSQUIRRELVM v) {
+''' % self.bound_name
+
+			if has_sequence:
+				out += '''\
+	if (sq_gettype(v, 2) == OT_INTEGER)
+		return __seq_get_%s_instance(v);
+
+''' % self.bound_name
+
+			if len(all_members) > 0:
+				out += '''\
 	if (sq_gettype(v, 2) == OT_STRING) {
 		const SQChar *key_cstr = nullptr;
 		sq_getstring(v, 2, &key_cstr);
@@ -76,13 +121,26 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			return i->second(v);
 		}
 	}
+''' % (self.bound_name, self.bound_name)
 
+			out += '''
 	sq_pushnull(v);
 	return sq_throwobject(v);
-}\n\n''' % (self.bound_name, self.bound_name, self.bound_name)
+}\n\n'''
 
-		if any(member['setter'] for member in all_members):
+		if has_sequence or has_mutable_members:
 			out += '''static SQInteger __set_%s_instance(HSQUIRRELVM v) {
+''' % self.bound_name
+
+			if has_sequence:
+				out += '''\
+	if (sq_gettype(v, 2) == OT_INTEGER)
+		return __seq_set_%s_instance(v);
+
+''' % self.bound_name
+
+			if has_mutable_members:
+				out += '''\
 	if (sq_gettype(v, 2) == OT_STRING) {
 		const SQChar *key_cstr = nullptr;
 		sq_getstring(v, 2, &key_cstr);
@@ -94,10 +152,12 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			return i->second(v);
 		}
 	}
+''' % (self.bound_name, self.bound_name)
 
+			out += '''
 	sq_pushnull(v);
 	return sq_throwobject(v);
-}\n\n''' % (self.bound_name, self.bound_name, self.bound_name)
+}\n\n'''
 
 		out += 'static void delete_%s(void *o) { delete (%s *)o; }\n\n' % (self.bound_name, self.ctype)
 
@@ -268,7 +328,7 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 		out += '\t\treturn SQ_ERROR;\n'
 		out += '\t}\n\n'
 
-		if len(all_members) > 0:
+		if has_sequence or len(all_members) > 0:
 			out += '\t// instance member lookup\n'
 			out += '\tsq_pushstring(v, _SC("_get"), -1);\n'
 			out += '\tsq_newclosure(v, __get_%s_instance, 0);\n' % self.bound_name
@@ -278,7 +338,7 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			out += '\t\treturn SQ_ERROR;\n'
 			out += '\t}\n\n'
 
-		if any(member['setter'] for member in all_members):
+		if has_sequence or has_mutable_members:
 			out += '\t// instance member assignation\n'
 			out += '\tsq_pushstring(v, _SC("_set"), -1);\n'
 			out += '\tsq_newclosure(v, __set_%s_instance, 0);\n' % self.bound_name
@@ -318,8 +378,12 @@ class SquirrelPtrTypeConverter(SquirrelTypeConverterCommon):
 	def get_type_glue(self, gen, module_name):
 		out = '''bool %s(HSQUIRRELVM v, SQInteger idx) {
 	SQObjectType type = sq_gettype(v, idx);
-	return type == OT_INTEGER || type == OT_NULL;
-}\n''' % self.check_func
+	if (type == OT_INTEGER || type == OT_NULL)
+		return true;
+	if (auto w = cast_to_wrapped_Object_safe(v, idx))
+		return _type_tag_can_cast(w->type_tag, %s);
+	return false;
+}\n''' % (self.check_func, self.type_tag)
 
 		out += '''void %s(HSQUIRRELVM v, SQInteger idx, void *obj) {
 	if (sq_gettype(v, idx) == OT_NULL) {
@@ -327,10 +391,14 @@ class SquirrelPtrTypeConverter(SquirrelTypeConverterCommon):
 		return;
 	}
 
-	SQInteger p = 0;
-	sq_getinteger(v, idx, &p);
-	*((%s*)obj) = (%s)p;
-}\n''' % (self.to_c_func, self.ctype, self.ctype, self.ctype)
+	if (sq_gettype(v, idx) == OT_INTEGER) {
+		SQInteger p = 0;
+		sq_getinteger(v, idx, &p);
+		*((%s*)obj) = (%s)p;
+	} else if (auto w = cast_to_wrapped_Object_unsafe(v, idx)) {
+		*(void **)obj = _type_tag_cast(w->obj, w->type_tag, %s);
+	}
+}\n''' % (self.to_c_func, self.ctype, self.ctype, self.ctype, self.type_tag)
 
 		out += '''SQInteger %s(HSQUIRRELVM v, void *obj, OwnershipPolicy) {
 	auto p = *((%s*)obj);
