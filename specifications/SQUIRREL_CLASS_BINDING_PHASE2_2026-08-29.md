@@ -3,7 +3,7 @@
 Date: Saturday, August 29, 2026
 
 Update on Sunday, August 30, 2026:
-Inheritance-focused Squirrel tests were added and validated. The full Squirrel suite now stands at `28 run, 0 failed, 2 skipped`.
+Inheritance-focused and extern-type Squirrel tests were added and validated. The full Squirrel suite now stands at `29 run, 0 failed, 1 skipped`.
 
 ## Scope
 
@@ -23,6 +23,7 @@ Updated files:
 - `gen.py`
 - `lib/squirrel/stl.py`
 - `tests/arg_out.py`
+- `tests/extern_type.py`
 - `tests/shared_ptr.py`
 - `tests/shared_ptr_default_comparison.py`
 - `tests/enumeration.py`
@@ -81,6 +82,7 @@ Updated tests:
 - `tests/arg_out.py`
 - `tests/cpp_exceptions.py`
 - `tests/enumeration.py`
+- `tests/extern_type.py`
 - `tests/function_template_call.py`
 - `tests/method_route_feature.py`
 - `tests/repr.py`
@@ -133,6 +135,7 @@ New Squirrel coverage now validates:
 - Using generated downcast helper functions such as `Cast_base_class_To_derived_class(...)`.
 - Accessing module-level bound variables from Squirrel.
 - Accessing named enumeration values from Squirrel.
+- Generating and loading modules that declare external FABGen-linked types on the Squirrel side.
 - Accessing and mutating bitfield-backed members from Squirrel.
 - Accessing nested bound objects through wrapped member references.
 - Accessing nested template-instantiated structs from Squirrel.
@@ -207,6 +210,16 @@ Result:
 
 - `2 run, 0 failed`
 
+Additional Squirrel extern-type test command validated on Sunday, August 30, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug extern_type
+```
+
+Result:
+
+- `1 run, 0 failed`
+
 Additional object-port test commands validated later on Saturday, August 29, 2026:
 
 ```powershell
@@ -256,7 +269,7 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Sunday, August 30, 2026:
 
-- `28 run, 0 failed, 2 skipped`
+- `29 run, 0 failed, 1 skipped`
 
 Passing Squirrel tests:
 
@@ -264,6 +277,7 @@ Passing Squirrel tests:
 - `basic_type_exchange`
 - `cpp_exceptions`
 - `enumeration`
+- `extern_type`
 - `function_call`
 - `function_template_call`
 - `method_route_feature`
@@ -304,7 +318,6 @@ Known limits after this step:
 
 The remaining skipped tests at this point are:
 
-- `extern_type`
 - `std_future`
 
 ## Static Data Member Policy

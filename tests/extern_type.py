@@ -24,6 +24,10 @@ test_lua = '''\
 my_test = require "my_test"
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+'''
+
 test_go = '''\
 package mytest
 '''
