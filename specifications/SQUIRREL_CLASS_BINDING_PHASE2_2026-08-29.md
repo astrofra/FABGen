@@ -3,7 +3,7 @@
 Date: Saturday, August 29, 2026
 
 Update on Sunday, August 30, 2026:
-Inheritance-focused and extern-type Squirrel tests were added and validated. The full Squirrel suite now stands at `29 run, 0 failed, 1 skipped`.
+Inheritance-focused, extern-type, and `std::future` Squirrel tests were added and validated. The full Squirrel suite now stands at `30 run, 0 failed, 0 skipped`.
 
 ## Scope
 
@@ -26,6 +26,7 @@ Updated files:
 - `tests/extern_type.py`
 - `tests/shared_ptr.py`
 - `tests/shared_ptr_default_comparison.py`
+- `tests/std_future.py`
 - `tests/enumeration.py`
 - `tests/repr.py`
 
@@ -113,6 +114,7 @@ New Squirrel coverage now validates:
 - Native C++ exception translation into Squirrel runtime errors.
 - Null pointer returns mapped to Squirrel `null`.
 - `std::shared_ptr<T>` construction, member access through proxy wrappers, and empty `shared_ptr` mapped to Squirrel `null`.
+- Move-only `std::future<T>` return values from C++ into Squirrel.
 - `std::vector<int>` construction from a Squirrel array.
 - Integer-index reads and writes on wrapped sequence-like objects.
 - Explicit `len()` calls on wrapped sequence-like objects.
@@ -136,6 +138,7 @@ New Squirrel coverage now validates:
 - Accessing module-level bound variables from Squirrel.
 - Accessing named enumeration values from Squirrel.
 - Generating and loading modules that declare external FABGen-linked types on the Squirrel side.
+- Calling `std::future<T>` methods such as `valid()`, `wait()`, and `get()` from Squirrel.
 - Accessing and mutating bitfield-backed members from Squirrel.
 - Accessing nested bound objects through wrapped member references.
 - Accessing nested template-instantiated structs from Squirrel.
@@ -220,6 +223,16 @@ Result:
 
 - `1 run, 0 failed`
 
+Additional Squirrel `std::future` test command validated on Sunday, August 30, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug std_future
+```
+
+Result:
+
+- `1 run, 0 failed`
+
 Additional object-port test commands validated later on Saturday, August 29, 2026:
 
 ```powershell
@@ -269,7 +282,7 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Sunday, August 30, 2026:
 
-- `29 run, 0 failed, 1 skipped`
+- `30 run, 0 failed, 0 skipped`
 
 Passing Squirrel tests:
 
@@ -287,6 +300,7 @@ Passing Squirrel tests:
 - `shared_ptr`
 - `shared_ptr_default_comparison`
 - `std_function`
+- `std_future`
 - `std_vector`
 - `struct_bitfield_member_access`
 - `struct_default_comparison`
@@ -315,10 +329,6 @@ Known limits after this step:
 - Squirrel `==` and `!=` on distinct class instances remain identity-based in the VM itself. FABGen now preserves identity for repeated non-owning returns, but value-based equality on separate wrapped instances must currently use `<=>` through `_cmp`. Mixed comparisons such as `instance <=> 4` are still blocked by the VM dispatch rules and do not reach `_cmp`.
 - The class `from_c` path currently assumes the generated module has been bound into the Squirrel root table.
 - Broader historical FABGen tests still need `test_squirrel` coverage before they can validate the class backend more deeply.
-
-The remaining skipped tests at this point are:
-
-- `std_future`
 
 ## Static Data Member Policy
 
@@ -392,6 +402,7 @@ At this point it can validate the core object workflow required for the first in
 - create and use wrapped C++ class instances from Squirrel,
 - use base/derived class relationships through FABGen cast rules and inherited bindings,
 - use proxied `std::shared_ptr<T>` wrappers, including null returns and deep comparison through `<=>`,
+- use move-only `std::future<T>` objects returned from C++ and drive them from Squirrel,
 - expose derived wrapped instances through `rval_transform`,
 - stringify wrapped class instances through `_tostring`,
 - iterate wrapped sequence-like classes from Squirrel with `foreach`.
