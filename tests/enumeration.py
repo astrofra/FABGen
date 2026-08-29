@@ -68,6 +68,26 @@ assert(my_test.NE_b == 1)
 assert(my_test.NE_c == 4096)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+assert(my_test.GE_a == 0);
+assert(my_test.GE_b == 1);
+assert(my_test.GE_c == 8);
+
+assert(my_test.SE_a == 0);
+assert(my_test.SE_b == 128);
+assert(my_test.SE_c == 512);
+
+assert(my_test.TE_a == 0);
+assert(my_test.TE_b == 1);
+assert(my_test.TE_c == 16384);
+
+assert(my_test.NE_a == 0);
+assert(my_test.NE_b == 1);
+assert(my_test.NE_c == 4096);
+'''
+
 test_go = '''\
 package mytest
 

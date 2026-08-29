@@ -35,6 +35,15 @@ my_test = require "my_test"
 
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local o = my_test.SomeStruct();
+
+assert(o.tostring() == "repr!");
+assert(("prefix:" + o) == "prefix:repr!");
+'''
+
 test_go = '''\
 package mytest
 

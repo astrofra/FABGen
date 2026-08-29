@@ -19,6 +19,9 @@ Updated files:
 - `lang/squirrel.py`
 - `gen.py`
 - `lib/squirrel/stl.py`
+- `tests/arg_out.py`
+- `tests/enumeration.py`
+- `tests/repr.py`
 
 The Squirrel backend now supports a first working class model based on native Squirrel classes and instances:
 
@@ -33,11 +36,13 @@ The Squirrel backend now supports a first working class model based on native Sq
 - Reuse of the same Squirrel proxy for repeated non-owning returns of the same C++ object.
 - Arithmetic metamethod binding for `_add`, `_sub`, `_mul`, and `_div`.
 - Comparison support through `_cmp` for class-to-class comparisons.
+- Class `repr` support through the Squirrel `_tostring` metamethod.
 - Sequence-aware classes now expose an explicit `len()` method and a generated `_nexti` metamethod for `foreach` iteration.
 - Safe tracked-VM shutdown through a generated `gen_release_<module>(v)` helper called before `sq_close(v)`, which avoids dangling callback releases during process teardown.
 - C++ to Squirrel object conversion through `sq_createinstance()`.
 - Squirrel to C++ object conversion with FABGen type-tag cast checks.
 - Sequence-style `_get` and `_set` support for wrapped classes with the FABGen `sequence` feature.
+- FABGen multi-result returns now map to a packed Squirrel array whenever more than one script-visible value must be returned.
 
 The supporting generator layer also received one correctness fix:
 
@@ -67,6 +72,9 @@ This kept the implementation compatible with FABGen's existing constructor proxy
 
 Updated tests:
 
+- `tests/arg_out.py`
+- `tests/enumeration.py`
+- `tests/repr.py`
 - `tests/function_call.py`
 - `tests/return_nullptr_as_none.py`
 - `tests/std_vector.py`
@@ -84,6 +92,7 @@ Updated tests:
 New Squirrel coverage now validates:
 
 - Global C++ function calls from Squirrel, including overload resolution and optional arguments.
+- `arg_out` and `arg_in_out` behavior from Squirrel.
 - Null pointer returns mapped to Squirrel `null`.
 - `std::vector<int>` construction from a Squirrel array.
 - Integer-index reads and writes on wrapped sequence-like objects.
@@ -100,8 +109,10 @@ New Squirrel coverage now validates:
 - Using class arithmetic metamethods (`_add`, `_sub`, `_mul`, `_div`) on bound objects.
 - Using class comparison support through `_cmp`, including equality-style checks with `<=>`.
 - Accessing module-level bound variables from Squirrel.
+- Accessing named enumeration values from Squirrel.
 - Accessing and mutating bitfield-backed members from Squirrel.
 - Accessing nested bound objects through wrapped member references.
+- String conversion of wrapped class instances through `_tostring`, `tostring()`, and string concatenation.
 
 ## Validation Results
 
@@ -121,6 +132,18 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug struct_exchang
 Result:
 
 - `4 run, 0 failed`
+
+Additional Squirrel return/enumeration/repr test commands validated later on Saturday, August 29, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug arg_out
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug enumeration
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug repr
+```
+
+Result:
+
+- `3 run, 0 failed`
 
 Additional object-port test commands validated later on Saturday, August 29, 2026:
 
@@ -171,12 +194,15 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Saturday, August 29, 2026:
 
-- `16 run, 0 failed, 14 skipped`
+- `19 run, 0 failed, 11 skipped`
 
 Passing Squirrel tests:
 
+- `arg_out`
 - `basic_type_exchange`
+- `enumeration`
 - `function_call`
+- `repr`
 - `return_nullptr_as_none`
 - `script_collection_exchange`
 - `std_function`
@@ -199,6 +225,7 @@ This is an intentionally small phase 2 slice, not full Lua parity yet.
 Known limits after this step:
 
 - Direct class-side property writes such as `MyType.value = ...` are still blocked by the Squirrel VM object model. Mutable static data members are exposed through `MyType.get_value()` / `MyType.set_value(v)` instead.
+- Squirrel native closures can only return zero or one VM value. FABGen therefore exposes multi-result bindings as a packed Squirrel array rather than emulating Lua-style multiple returns.
 - Sequence support still does not try to emulate every built-in container behavior. It now covers integer `_get/_set`, explicit `len()`, and `foreach` through `_nexti`, but richer parity with native Squirrel containers is still incomplete.
 - Squirrel `==` and `!=` on distinct class instances remain identity-based in the VM itself. FABGen now preserves identity for repeated non-owning returns, but value-based equality on separate wrapped instances must currently use `<=>` through `_cmp`. Mixed comparisons such as `instance <=> 4` are still blocked by the VM dispatch rules and do not reach `_cmp`.
 - The class `from_c` path currently assumes the generated module has been bound into the Squirrel root table.
@@ -232,6 +259,21 @@ The helper releases tracked instance-cache references and marks tracked callback
 
 The FABGen Squirrel test host was updated accordingly, and the previously intermittent `std_function` Squirrel test was revalidated after that change.
 
+## Multi-Result Return Policy
+
+Stock Squirrel native closures do not support Lua-style multiple return values.
+
+To keep `arg_out` and `arg_in_out` usable without forking the VM, the backend now uses this rule:
+
+- If the binding exposes exactly one script-visible result, that value is returned directly.
+- If the binding exposes more than one script-visible result, FABGen packs them into a Squirrel array in the same order as the existing FABGen result list.
+
+Examples:
+
+- `void f(int &a, int *b)` with `arg_out: [a, b]` returns `[a, b]`.
+- `bool g(int *v)` with `arg_in_out: [v]` returns `[result, v]`.
+- `void h(MyType *obj)` with only one object `arg_in_out` still returns the object directly.
+
 ## Practical Outcome
 
 The Squirrel backend is no longer function-only.
@@ -240,9 +282,12 @@ At this point it can validate the core object workflow required for the first in
 
 - execute a Squirrel script,
 - exchange primitive values, arrays, and tables,
+- exchange named enum values,
 - call C++ from Squirrel,
 - call Squirrel callbacks from C++,
+- use `arg_out` / `arg_in_out` within the VM's single-return model,
 - create and use wrapped C++ class instances from Squirrel,
+- stringify wrapped class instances through `_tostring`,
 - iterate wrapped sequence-like classes from Squirrel with `foreach`.
 
 ## Recommended Next Steps

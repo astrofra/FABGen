@@ -61,6 +61,8 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 
 		gen.add_include('string', True)
 
+		has_repr = 'repr' in self._features
+		repr_feature = self._features['repr'] if has_repr else None
 		has_sequence = 'sequence' in self._features
 		seq = self._features['sequence'] if has_sequence else None
 
@@ -74,6 +76,15 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 
 		out += build_index_map('__get_member_map_%s' % self.bound_name, all_members, lambda v: True, lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['getter']))
 		out += build_index_map('__set_member_map_%s' % self.bound_name, all_members, lambda v: v['setter'], lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['setter']))
+
+		if has_repr:
+			out += 'static SQInteger __tostring_%s_instance(HSQUIRRELVM v) {\n' % self.bound_name
+			out += '\tstd::string repr;\n'
+			out += gen._prepare_to_c_self(self, '_self')
+			out += repr_feature('_self', 'repr')
+			out += '\tsq_pushstring(v, repr.c_str(), -1);\n'
+			out += '\treturn 1;\n'
+			out += '}\n\n'
 
 		if has_sequence:
 			out += 'static SQInteger __len_%s_instance(HSQUIRRELVM v) {\n' % self.bound_name
@@ -561,6 +572,16 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 			out += '\t\treturn SQ_ERROR;\n'
 			out += '\t}\n\n'
 
+		if has_repr:
+			out += '\t// string representation\n'
+			out += '\tsq_pushstring(v, _SC("_tostring"), -1);\n'
+			out += '\tsq_newclosure(v, __tostring_%s_instance, 0);\n' % self.bound_name
+			out += '\tsq_setnativeclosurename(v, -1, _SC("_tostring"));\n'
+			out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+			out += '\t\tsq_settop(v, top);\n'
+			out += '\t\treturn SQ_ERROR;\n'
+			out += '\t}\n\n'
+
 		if len(all_static_members) > 0:
 			out += '\t// static data member accessors\n'
 			for member in all_static_members:
@@ -898,7 +919,23 @@ private:
 		return 'rval_count += ' + conv.from_c_call(out_var, expr, ownership)
 
 	def commit_from_c_vars(self, rvals, ctx='default'):
-		return ''
+		if ctx == 'rbind_args' or len(rvals) <= 1:
+			return ''
+
+		return '''\
+SQInteger packed_rval_count = rval_count;
+SQInteger first_rval_idx = arg_count + 2;
+sq_newarray(v, 0);
+SQInteger packed_rvals_idx = sq_gettop(v);
+for (SQInteger i = 0; i < packed_rval_count; ++i) {
+	sq_push(v, first_rval_idx + i);
+	if (SQ_FAILED(sq_arrayappend(v, packed_rvals_idx)))
+		return SQ_ERROR;
+}
+for (SQInteger i = 0; i < packed_rval_count; ++i)
+	sq_remove(v, arg_count + 2);
+rval_count = 1;
+'''
 
 	def rval_assign_arg_in_out(self, out_var, arg_in_out):
 		out = 'sq_push(v, %s);\n' % arg_in_out
