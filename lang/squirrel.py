@@ -72,6 +72,7 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 		has_mutable_members = any(member['setter'] for member in all_members)
 		has_len_method = any(method['bound_name'] == 'len' for method in all_methods)
 		comparison_ops = {op['op']: op for op in self.comparison_ops}
+		has_default_deep_compare = self._supports_deep_compare and len(comparison_ops) == 0
 		sq_arithmetic_metamethods = {'+': '_add', '-': '_sub', '*': '_mul', '/': '_div'}
 
 		out += build_index_map('__get_member_map_%s' % self.bound_name, all_members, lambda v: True, lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['getter']))
@@ -379,6 +380,30 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 
 			out += '}\n\n'
 
+		if has_default_deep_compare:
+			out += '''static SQInteger __default_cmp_%s_instance(HSQUIRRELVM v) {
+	auto w1 = cast_to_wrapped_Object_safe(v, 1);
+	auto w2 = cast_to_wrapped_Object_safe(v, 2);
+
+	if (!w1 || !w2 || w1->type_tag != w2->type_tag)
+		return sq_throwerror(v, _SC("invalid comparison between %s instances"));
+
+	if (*(%s *)w1->obj == *(%s *)w2->obj) {
+		sq_pushinteger(v, 0);
+		return 1;
+	}
+
+	sq_pushinteger(v, *(%s *)w1->obj < *(%s *)w2->obj ? -1 : 1);
+	return 1;
+}\n\n''' % (
+				self.bound_name,
+				_escape_sq_string(self.bound_name),
+				self.ctype,
+				self.ctype,
+				self.ctype,
+				self.ctype
+			)
+
 		if self.constructor:
 			out += '''static SQInteger __constructor_%s(HSQUIRRELVM v) {
 	SQUserPointer self_ptr = nullptr;
@@ -650,10 +675,13 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 				out += '\t}\n'
 			out += '\n'
 
-		if len(comparison_ops) > 0:
+		if len(comparison_ops) > 0 or has_default_deep_compare:
 			out += '\t// comparison metamethods\n'
 			out += '\tsq_pushstring(v, _SC("_cmp"), -1);\n'
-			out += '\tsq_newclosure(v, __cmp_%s_instance, 0);\n' % self.bound_name
+			if len(comparison_ops) > 0:
+				out += '\tsq_newclosure(v, __cmp_%s_instance, 0);\n' % self.bound_name
+			else:
+				out += '\tsq_newclosure(v, __default_cmp_%s_instance, 0);\n' % self.bound_name
 			out += '\tsq_setnativeclosurename(v, -1, _SC("_cmp"));\n'
 			out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
 			out += '\t\tsq_settop(v, top);\n'

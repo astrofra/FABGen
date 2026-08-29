@@ -20,6 +20,8 @@ Updated files:
 - `gen.py`
 - `lib/squirrel/stl.py`
 - `tests/arg_out.py`
+- `tests/shared_ptr.py`
+- `tests/shared_ptr_default_comparison.py`
 - `tests/enumeration.py`
 - `tests/repr.py`
 
@@ -36,6 +38,7 @@ The Squirrel backend now supports a first working class model based on native Sq
 - Reuse of the same Squirrel proxy for repeated non-owning returns of the same C++ object.
 - Arithmetic metamethod binding for `_add`, `_sub`, `_mul`, and `_div`.
 - Comparison support through `_cmp` for class-to-class comparisons.
+- Default deep comparison through `_cmp` for bound types flagged with FABGen `_supports_deep_compare`, such as `std::shared_ptr<T>` proxy wrappers.
 - Class `repr` support through the Squirrel `_tostring` metamethod.
 - Sequence-aware classes now expose an explicit `len()` method and a generated `_nexti` metamethod for `foreach` iteration.
 - Safe tracked-VM shutdown through a generated `gen_release_<module>(v)` helper called before `sq_close(v)`, which avoids dangling callback releases during process teardown.
@@ -80,6 +83,8 @@ Updated tests:
 - `tests/repr.py`
 - `tests/function_call.py`
 - `tests/return_nullptr_as_none.py`
+- `tests/shared_ptr.py`
+- `tests/shared_ptr_default_comparison.py`
 - `tests/std_vector.py`
 - `tests/struct_default_comparison.py`
 - `tests/struct_instantiation.py`
@@ -100,6 +105,7 @@ New Squirrel coverage now validates:
 - `arg_out` and `arg_in_out` behavior from Squirrel.
 - Native C++ exception translation into Squirrel runtime errors.
 - Null pointer returns mapped to Squirrel `null`.
+- `std::shared_ptr<T>` construction, member access through proxy wrappers, and empty `shared_ptr` mapped to Squirrel `null`.
 - `std::vector<int>` construction from a Squirrel array.
 - Integer-index reads and writes on wrapped sequence-like objects.
 - Explicit `len()` calls on wrapped sequence-like objects.
@@ -113,6 +119,7 @@ New Squirrel coverage now validates:
 - Passing wrapped objects between Squirrel and C++ by value, pointer, and reference.
 - Returning wrapped objects from C++ back to Squirrel.
 - Preserving Squirrel object identity when the same non-owning C++ object is returned repeatedly.
+- Comparing distinct wrapped `std::shared_ptr<T>` handles that refer to the same underlying pointee through default Squirrel `<=>` support.
 - Using class arithmetic metamethods (`_add`, `_sub`, `_mul`, `_div`) on bound objects.
 - Using class comparison support through `_cmp`, including equality-style checks with `<=>`.
 - Accessing module-level bound variables from Squirrel.
@@ -169,6 +176,17 @@ Result:
 
 - `5 run, 0 failed`
 
+Additional Squirrel shared pointer test commands validated later on Saturday, August 29, 2026:
+
+```powershell
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug shared_ptr
+python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2" --debug shared_ptr_default_comparison
+```
+
+Result:
+
+- `2 run, 0 failed`
+
 Additional object-port test commands validated later on Saturday, August 29, 2026:
 
 ```powershell
@@ -218,7 +236,7 @@ python tests.py --sqbase "$env:TEMP\fabgen_squirrel_ref2"
 
 Result on Saturday, August 29, 2026:
 
-- `24 run, 0 failed, 6 skipped`
+- `26 run, 0 failed, 4 skipped`
 
 Passing Squirrel tests:
 
@@ -232,6 +250,8 @@ Passing Squirrel tests:
 - `repr`
 - `return_nullptr_as_none`
 - `script_collection_exchange`
+- `shared_ptr`
+- `shared_ptr_default_comparison`
 - `std_function`
 - `std_vector`
 - `struct_bitfield_member_access`
@@ -263,8 +283,6 @@ Known limits after this step:
 The remaining skipped tests at this point are:
 
 - `extern_type`
-- `shared_ptr`
-- `shared_ptr_default_comparison`
 - `std_future`
 - `struct_inheritance`
 - `struct_inheritance_cast`
@@ -312,6 +330,17 @@ Examples:
 - `bool g(int *v)` with `arg_in_out: [v]` returns `[result, v]`.
 - `void h(MyType *obj)` with only one object `arg_in_out` still returns the object directly.
 
+## Shared Pointer Comparison Policy
+
+For stock Squirrel, `==` and `!=` on class instances remain VM identity checks and do not consult FABGen comparison logic.
+
+For `std::shared_ptr<T>` proxy wrappers and any other bound type that enables FABGen `_supports_deep_compare`, the Squirrel backend now generates a default `_cmp` metamethod when no explicit comparison operators are bound.
+
+This gives a practical rule:
+
+- repeated non-owning returns of the same wrapped C++ object keep `==` working through instance identity reuse,
+- distinct wrappers that still represent equal deep values, such as aliased `std::shared_ptr<T>` handles, should be compared from Squirrel with `<=>`.
+
 ## Practical Outcome
 
 The Squirrel backend is no longer function-only.
@@ -328,6 +357,7 @@ At this point it can validate the core object workflow required for the first in
 - call bound function-template instantiations,
 - exercise routed method bindings,
 - create and use wrapped C++ class instances from Squirrel,
+- use proxied `std::shared_ptr<T>` wrappers, including null returns and deep comparison through `<=>`,
 - expose derived wrapped instances through `rval_transform`,
 - stringify wrapped class instances through `_tostring`,
 - iterate wrapped sequence-like classes from Squirrel with `foreach`.

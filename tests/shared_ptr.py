@@ -78,6 +78,24 @@ spn = my_test.get_empty_shared_ptr()
 assert(spn == nil)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local sp = my_test.get_shared_ptr_to_simple_struct();
+
+assert(sp.u == 4.0);
+assert(sp.v == 7);
+
+local sp2 = my_test.ssimple_struct(9.0);
+
+assert(sp2.u == 9.0);
+assert(sp2.v == 90);
+
+local spn = my_test.get_empty_shared_ptr();
+
+assert(spn == null);
+'''
+
 test_go = '''\
 package mytest
 
