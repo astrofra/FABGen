@@ -504,6 +504,7 @@ class FABGen:
 		self._header += '// FABgen output .h\n'
 		self._header += common
 		self._header += '#pragma once\n\n'
+		self._header += '#include "fabgen.h"\n\n'
 		self._header += '#include <cstdint>\n\n'
 		self._header += '#include <cstddef>\n\n'
 

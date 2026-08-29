@@ -7,6 +7,7 @@ import lang.lua
 def bind_stl(gen):
 	gen.add_include('vector', True)
 	gen.add_include('string', True)
+	gen.add_include('map', True)
 
 	class LuaStringConverter(lang.lua.LuaTypeConverterCommon):
 		def get_type_glue(self, gen, module_name):
@@ -118,4 +119,66 @@ class LuaTableToStdVectorConverter(lang.lua.LuaTypeConverterCommon):
 	}
 	return 1;
 }\n''' % (self.from_c_func, self.T_conv.ctype, self.T_conv.ctype, self.T_conv.from_c_func)
+		return out
+
+
+class LuaTableToStdMapConverter(lang.lua.LuaTypeConverterCommon):
+	def __init__(self, type, K_conv, V_conv):
+		super().__init__(type, type, None, type)
+		self.K_conv = K_conv
+		self.V_conv = V_conv
+
+	def get_type_glue(self, gen, module_name):
+		out = '''bool %s(lua_State *L, int idx) {
+	if (!lua_istable(L, idx))
+		return false;
+
+	lua_pushnil(L);
+	while (lua_next(L, idx)) {
+		if (!%s(L, -2) || !%s(L, -1))
+			return false;
+		lua_pop(L, 1);
+	}
+
+	return true;
+}\n''' % (self.check_func, self.K_conv.check_func, self.V_conv.check_func)
+
+		out += '''void %s(lua_State *L, int idx, void *obj) {
+	auto table = (std::map<%s, %s> *)obj;
+	table->clear();
+
+	lua_pushnil(L);
+	while (lua_next(L, idx)) {
+		%s key;
+		%s value;
+		%s(L, -2, &key);
+		%s(L, -1, &value);
+		(*table)[%s] = %s;
+		lua_pop(L, 1);
+	}
+}\n''' % (
+			self.to_c_func,
+			self.K_conv.ctype,
+			self.V_conv.ctype,
+			self.K_conv.to_c_storage_ctype,
+			self.V_conv.to_c_storage_ctype,
+			self.K_conv.to_c_func,
+			self.V_conv.to_c_func,
+			self.K_conv.prepare_var_from_conv('key', ''),
+			self.V_conv.prepare_var_from_conv('value', '')
+		)
+
+		out += '''int %s(lua_State *L, void *obj, OwnershipPolicy own) {
+	auto table = (std::map<%s, %s> *)obj;
+	lua_newtable(L);
+
+	for (const auto &entry : *table) {
+		auto key = entry.first;
+		auto value = entry.second;
+		%s(L, &key, Copy);
+		%s(L, &value, Copy);
+		lua_settable(L, -3);
+	}
+	return 1;
+}\n''' % (self.from_c_func, self.K_conv.ctype, self.V_conv.ctype, self.K_conv.from_c_func, self.V_conv.from_c_func)
 		return out

@@ -12,6 +12,7 @@ import os
 
 import lang.cpython
 import lang.lua
+import lang.squirrel
 import lang.go
 
 
@@ -20,12 +21,22 @@ start_path = os.path.dirname(__file__)
 parser = argparse.ArgumentParser(description='Run generator unit tests.')
 parser.add_argument('--pybase', dest='python_base_path', help='Path to the Python interpreter')
 parser.add_argument('--luabase', dest='lua_base_path', help='Path to the Lua interpreter')
+parser.add_argument('--sqbase', dest='squirrel_base_path', help='Path to the Squirrel source tree')
 parser.add_argument('--go', dest='go_build', help='Build GO', action="store_true")
 parser.add_argument('--debug', dest='debug_test', help='Generate a working solution to debug a test')
 parser.add_argument('--x64', dest='x64', help='Build for 64 bit architecture', action='store_true', default=False)
 parser.add_argument('--linux', dest='linux', help='Build on Linux', action='store_true', default=False)
 
 args = parser.parse_args()
+
+if args.python_base_path:
+	args.python_base_path = os.path.abspath(args.python_base_path)
+
+if args.lua_base_path:
+	args.lua_base_path = os.path.abspath(args.lua_base_path)
+
+if args.squirrel_base_path:
+	args.squirrel_base_path = os.path.abspath(args.squirrel_base_path)
 
 # -- interpreter settings
 if args.python_base_path:
@@ -38,9 +49,9 @@ if args.python_base_path:
 # -- CMake generator
 if not args.linux:
 	if args.x64:
-		cmake_generator = 'Visual Studio 16 2019'
+		cmake_generator = 'Visual Studio 17 2022'
 	else:
-		cmake_generator = 'Visual Studio 16 2019'
+		cmake_generator = 'Visual Studio 17 2022'
 
 	print("Using CMake generator: %s" % cmake_generator)
 
@@ -50,13 +61,19 @@ if not args.linux:
 # --
 run_test_list = []
 failed_test_list = []
+skipped_test_list = []
 
 
 def run_test(gen, name, testbed):
+	test_module = importlib.import_module(name)
+	skip_reason = testbed.get_skip_reason(test_module)
+	if skip_reason is not None:
+		print("[SKIPPED] %s" % skip_reason)
+		skipped_test_list.append('%s (%s)' % (name, gen.get_language()))
+		return
+
 	work_path = tempfile.mkdtemp()
 	print('Working directory is ' + work_path)
-
-	test_module = importlib.import_module(name)
 
 	# generate the interface file
 	files = test_module.bind_test(gen)
@@ -105,8 +122,9 @@ def run_tests(gen, names, testbed):
 
 	run_test_count = len(run_test_list)
 	failed_test_count = len(failed_test_list)
+	skipped_test_count = len(skipped_test_list)
 
-	print("[Test summary: %d run, %d failed]" % (run_test_count, failed_test_count))
+	print("[Test summary: %d run, %d failed, %d skipped]" % (run_test_count, failed_test_count, skipped_test_count))
 	print("Done with fabgen generator %s\n" % gen.get_language())
 
 
@@ -135,7 +153,7 @@ def build_and_deploy_cpython_extension(work_path, build_path, python_interpreter
 	print("Generating build system...")
 
 	try:
-		subprocess.check_output('cmake .. -G "%s"' % cmake_generator)
+		subprocess.check_output('cmake .. -G "%s" -A %s' % (cmake_generator, msvc_arch))
 	except subprocess.CalledProcessError as e:
 		print(e.output.decode('utf-8'))
 		return False
@@ -164,6 +182,11 @@ def build_and_deploy_cpython_extension(work_path, build_path, python_interpreter
 
 
 class CPythonTestBed:
+	def get_skip_reason(self, module):
+		if not hasattr(module, 'test_python'):
+			return 'missing test_python'
+		return None
+
 	def build_and_test_extension(self, work_path, module, sources):
 		global python_interpreter
 
@@ -227,11 +250,79 @@ class CPythonTestBed:
 
 
 # Lua test bed
+def _first_existing_path(paths):
+	for path in paths:
+		if os.path.exists(path):
+			return path
+	return None
+
+
+def resolve_lua_include_dir(base_path):
+	candidates = [
+		os.path.join(base_path, 'include', 'lua'),
+		os.path.join(base_path, 'include'),
+		os.path.join(base_path, 'src'),
+		os.path.join(base_path, 'extern', 'lua', 'src'),
+		os.path.join(base_path, '..', 'extern', 'lua', 'src'),
+		os.path.join(base_path, '..', '..', 'extern', 'lua', 'src'),
+		os.path.join(base_path, '..', '..', '..', 'extern', 'lua', 'src')
+	]
+	return _first_existing_path([os.path.abspath(path) for path in candidates])
+
+
+def resolve_lua_runtime_dir(base_path):
+	candidates = [
+		os.path.join(base_path, 'bin', 'Debug'),
+		os.path.join(base_path, 'bin', 'Release'),
+		os.path.join(base_path, 'Debug'),
+		os.path.join(base_path, 'Release'),
+		os.path.join(base_path, 'build', 'extern', 'lua', 'Debug'),
+		os.path.join(base_path, 'build', 'extern', 'lua', 'Release'),
+		os.path.join(base_path, '..', 'build', 'extern', 'lua', 'Debug'),
+		os.path.join(base_path, '..', 'build', 'extern', 'lua', 'Release')
+	]
+	return _first_existing_path([os.path.abspath(path) for path in candidates])
+
+
+def resolve_lua_library_dir(base_path):
+	candidates = [
+		os.path.join(base_path, 'lib', 'Debug'),
+		os.path.join(base_path, 'lib', 'Release'),
+		os.path.join(base_path, 'Debug'),
+		os.path.join(base_path, 'Release'),
+		os.path.join(base_path, 'build', 'extern', 'lua', 'Debug'),
+		os.path.join(base_path, 'build', 'extern', 'lua', 'Release'),
+		os.path.join(base_path, '..', 'build', 'extern', 'lua', 'Debug'),
+		os.path.join(base_path, '..', 'build', 'extern', 'lua', 'Release')
+	]
+	return _first_existing_path([os.path.abspath(path) for path in candidates])
+
+
+def resolve_lua_runtime_files(base_path):
+	runtime_dir = resolve_lua_runtime_dir(base_path)
+	if runtime_dir is None:
+		return None, None
+
+	lua_exe = os.path.join(runtime_dir, 'lua.exe')
+	if not os.path.exists(lua_exe):
+		return None, None
+
+	lua_dll = None
+	for entry in os.listdir(runtime_dir):
+		if entry.lower().startswith('lua') and entry.lower().endswith('.dll'):
+			lua_dll = os.path.join(runtime_dir, entry)
+			break
+
+	return lua_exe, lua_dll
+
+
 def create_lua_cmake_file(module, work_path, sources, sdk_path):
 	cmake_path = os.path.join(work_path, 'CMakeLists.txt')
 
 	with open(cmake_path, 'w') as file:
 		quoted_sources = ['"%s"' % source for source in sources]
+		include_dir = resolve_lua_include_dir(sdk_path)
+		library_dir = resolve_lua_library_dir(sdk_path)
 
 		file.write('''
 cmake_minimum_required(VERSION 3.1)
@@ -241,27 +332,32 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/")
 project(%s)
 enable_language(C CXX)
 
-link_directories("%s/lib/Debug")
+link_directories("%s")
 
 #add_definitions(-DLUA_USE_APICHECK)
 add_library(my_test SHARED %s)
 set_target_properties(my_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG "%s")
-target_include_directories(my_test PRIVATE "%s/include/lua")
+target_include_directories(my_test PRIVATE "%s")
 target_link_libraries(my_test lua)
-''' % (module, sdk_path, ' '.join(quoted_sources), work_path.replace('\\', '/'), sdk_path))
+''' % (module, library_dir.replace('\\', '/'), ' '.join(quoted_sources), work_path.replace('\\', '/'), include_dir.replace('\\', '/')))
 
 
 def build_and_deploy_lua_extension(work_path, build_path):
 	print("Generating build system...")
 	try:
-		subprocess.check_output('cmake .. -G "%s"' % cmake_generator)
+		subprocess.check_output('cmake .. -G "%s" -A %s' % (cmake_generator, msvc_arch))
 	except subprocess.CalledProcessError as e:
 		print(e.output.decode('utf-8'))
 		return False
 
 	# deploy Lua runtime from the SDK to the work folder
-	shutil.copyfile(args.lua_base_path + '/bin/Debug/lua.exe', os.path.join(work_path, 'lua.exe'))
-	shutil.copyfile(args.lua_base_path + '/bin/Debug/lua53.dll', os.path.join(work_path, 'lua53.dll'))
+	lua_exe, lua_dll = resolve_lua_runtime_files(args.lua_base_path)
+	if lua_exe is None or lua_dll is None:
+		print('Could not resolve the Lua runtime from %s' % args.lua_base_path)
+		return False
+
+	shutil.copyfile(lua_exe, os.path.join(work_path, 'lua.exe'))
+	shutil.copyfile(lua_dll, os.path.join(work_path, os.path.basename(lua_dll)))
 
 	if args.debug_test:
 		with open(os.path.join(build_path, 'my_test.vcxproj.user'), 'w') as file:
@@ -287,6 +383,11 @@ def build_and_deploy_lua_extension(work_path, build_path):
 
 
 class LuaTestBed:
+	def get_skip_reason(self, module):
+		if not hasattr(module, 'test_lua'):
+			return 'missing test_lua'
+		return None
+
 	def build_and_test_extension(self, work_path, module, sources):
 		test_path = os.path.join(work_path, 'test.lua')
 		with open(test_path, 'w') as file:
@@ -298,7 +399,7 @@ class LuaTestBed:
 			os.chdir(work_path)
 			shutil.copy(os.path.join(args.lua_base_path, 'bin', 'lua'), work_path)
 
-			build_cmd = 'gcc -I' + os.path.join(args.lua_base_path, 'include') + ' -g -O0 -fPIC -std=c++14 -c %s -o my_test.o' % ' '.join(sources)
+			build_cmd = 'gcc -I' + resolve_lua_include_dir(args.lua_base_path) + ' -g -O0 -fPIC -std=c++14 -c %s -o my_test.o' % ' '.join(sources)
 
 			try:
 				subprocess.check_output(build_cmd, shell=True, stderr=subprocess.STDOUT)
@@ -306,7 +407,7 @@ class LuaTestBed:
 				print("Build error: ", e.output.decode('utf-8'))
 				return False
 
-			link_cmd = 'g++ -shared my_test.o -L' + os.path.join(args.lua_base_path, 'lib') + ' -o my_test.so -pthread'
+			link_cmd = 'g++ -shared my_test.o -L' + resolve_lua_library_dir(args.lua_base_path) + ' -o my_test.so -pthread'
 
 			try:
 				subprocess.check_output(link_cmd, shell=True, stderr=subprocess.STDOUT)
@@ -332,6 +433,195 @@ class LuaTestBed:
 		success = True
 		try:
 			subprocess.check_output(lua_interpreter + ' test.lua', shell=True, stderr=subprocess.STDOUT)
+		except subprocess.CalledProcessError as e:
+			print(e.output.decode('utf-8'))
+			success = False
+
+		print("Cleanup...")
+
+		return success
+
+
+# Squirrel test bed
+def create_squirrel_cmake_file(module, work_path, sources, sdk_path):
+	cmake_path = os.path.join(work_path, 'CMakeLists.txt')
+
+	with open(cmake_path, 'w') as file:
+		quoted_sources = ['"%s"' % source for source in sources]
+		work_path_ = work_path.replace('\\', '/')
+		sdk_path_ = sdk_path.replace('\\', '/')
+
+		file.write(f'''
+cmake_minimum_required(VERSION 3.12)
+
+project({module})
+enable_language(C CXX)
+
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+file(GLOB SQUIRREL_CORE_SOURCES "{sdk_path_}/squirrel/*.cpp")
+file(GLOB SQUIRREL_STDLIB_SOURCES "{sdk_path_}/sqstdlib/*.cpp")
+
+add_executable(my_test {' '.join(quoted_sources)} "main.cpp" ${{SQUIRREL_CORE_SOURCES}} ${{SQUIRREL_STDLIB_SOURCES}})
+target_include_directories(my_test PRIVATE "{sdk_path_}/include")
+
+if(MSVC)
+	target_compile_definitions(my_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+	target_compile_definitions(my_test PRIVATE _SQ64)
+endif()
+
+set_target_properties(my_test PROPERTIES
+	RUNTIME_OUTPUT_DIRECTORY_DEBUG "{work_path_}"
+	RUNTIME_OUTPUT_DIRECTORY_RELEASE "{work_path_}"
+	RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "{work_path_}"
+)
+''')
+
+
+def create_squirrel_host_file(work_path):
+	host_path = os.path.join(work_path, 'main.cpp')
+
+	with open(host_path, 'w') as file:
+		file.write('''\
+#include <cstdarg>
+#include <cstdio>
+
+extern "C" {
+#include "squirrel.h"
+#include "sqstdaux.h"
+#include "sqstdio.h"
+#include "sqstdblob.h"
+#include "sqstdmath.h"
+#include "sqstdstring.h"
+#include "sqstdsystem.h"
+}
+
+#include "bind_Squirrel.h"
+
+#ifdef SQUNICODE
+#define scvprintf vfwprintf
+#else
+#define scvprintf vfprintf
+#endif
+
+static void printfunc(HSQUIRRELVM v, const SQChar *s, ...) {
+	va_list vl;
+	va_start(vl, s);
+	scvprintf(stdout, s, vl);
+	va_end(vl);
+}
+
+static void errorfunc(HSQUIRRELVM v, const SQChar *s, ...) {
+	va_list vl;
+	va_start(vl, s);
+	scvprintf(stderr, s, vl);
+	va_end(vl);
+}
+
+static bool register_stdlibs(HSQUIRRELVM v) {
+	sq_pushroottable(v);
+	if (SQ_FAILED(sqstd_register_iolib(v)) ||
+		SQ_FAILED(sqstd_register_bloblib(v)) ||
+		SQ_FAILED(sqstd_register_mathlib(v)) ||
+		SQ_FAILED(sqstd_register_stringlib(v)) ||
+		SQ_FAILED(sqstd_register_systemlib(v))) {
+		sq_poptop(v);
+		return false;
+	}
+	sq_poptop(v);
+	return true;
+}
+
+int main(int argc, char **argv) {
+	HSQUIRRELVM v = sq_open(1024);
+	if (!v)
+		return 1;
+
+	sqstd_seterrorhandlers(v);
+	sq_setprintfunc(v, printfunc, errorfunc);
+
+	if (!register_stdlibs(v)) {
+		sq_close(v);
+		return 2;
+	}
+
+	if (SQ_FAILED(gen_bind_my_test(v, _SC("my_test")))) {
+		sq_close(v);
+		return 3;
+	}
+
+	sq_pushroottable(v);
+	if (SQ_FAILED(sqstd_dofile(v, _SC("test.nut"), SQFalse, SQTrue))) {
+		sq_poptop(v);
+		sq_close(v);
+		return 4;
+	}
+	sq_poptop(v);
+
+	sq_close(v);
+	return 0;
+}
+''')
+
+
+def build_and_deploy_squirrel_extension(work_path, build_path):
+	print("Generating build system...")
+	try:
+		if args.linux:
+			subprocess.check_output(['cmake', '..'], stderr=subprocess.STDOUT)
+		else:
+			subprocess.check_output('cmake .. -G "%s" -A %s' % (cmake_generator, msvc_arch), shell=True, stderr=subprocess.STDOUT)
+	except subprocess.CalledProcessError as e:
+		print(e.output.decode('utf-8'))
+		return False
+
+	print("Building executable...")
+	try:
+		if args.linux:
+			subprocess.check_output(['cmake', '--build', '.'], stderr=subprocess.STDOUT)
+		else:
+			subprocess.check_output(['cmake', '--build', '.', '--config', 'Release'], stderr=subprocess.STDOUT)
+	except subprocess.CalledProcessError as e:
+		print(e.output.decode('utf-8'))
+		return False
+
+	return True
+
+
+class SquirrelTestBed:
+	def get_skip_reason(self, module):
+		if not hasattr(module, 'test_squirrel'):
+			return 'missing test_squirrel'
+		return None
+
+	def build_and_test_extension(self, work_path, module, sources):
+		test_path = os.path.join(work_path, 'test.nut')
+		with open(test_path, 'w') as file:
+			file.write(module.test_squirrel)
+
+		create_squirrel_host_file(work_path)
+
+		build_path = os.path.join(work_path, 'build')
+		os.mkdir(build_path)
+		os.chdir(build_path)
+
+		create_squirrel_cmake_file("test_squirrel", work_path, sources, args.squirrel_base_path)
+		create_clang_format_file(work_path)
+
+		if not build_and_deploy_squirrel_extension(work_path, build_path):
+			return False
+
+		print("Executing Squirrel test...")
+		os.chdir(work_path)
+
+		executable = './my_test' if args.linux else 'my_test.exe'
+		success = True
+		try:
+			subprocess.check_output(executable, shell=True, stderr=subprocess.STDOUT)
 		except subprocess.CalledProcessError as e:
 			print(e.output.decode('utf-8'))
 			success = False
@@ -374,7 +664,7 @@ def build_and_deploy_go_extension(work_path, build_path):
 		if args.linux:
 			subprocess.check_output(['cmake', '..'])
 		else:
-			subprocess.check_output('cmake .. -G "%s"' % cmake_generator)
+			subprocess.check_output('cmake .. -G "%s" -A %s' % (cmake_generator, msvc_arch))
 	except subprocess.CalledProcessError as e:
 		print(e.output.decode('utf-8'))
 		return False
@@ -402,11 +692,12 @@ def build_and_deploy_go_extension(work_path, build_path):
 	return True
 
 class GoTestBed:
-	def build_and_test_extension(self, work_path, module, sources):
+	def get_skip_reason(self, module):
 		if not hasattr(module, "test_go"):
-			print("Can't find test_go")
-			return False
+			return "missing test_go"
+		return None
 
+	def build_and_test_extension(self, work_path, module, sources):
 		# copy test file
 		test_path = os.path.join(work_path, 'test.go')
 		with open(test_path, 'w') as file:
@@ -482,6 +773,12 @@ if args.lua_base_path:
 	gen = lang.lua.LuaGenerator()
 	gen.verbose = False
 	run_tests(gen, test_names, LuaTestBed())
+
+if args.squirrel_base_path:
+	gen = lang.squirrel.SquirrelGenerator()
+	gen.verbose = False
+	gen.embedded = True
+	run_tests(gen, test_names, SquirrelTestBed())
 
 if args.go_build:
 	gen = lang.go.GoGenerator()

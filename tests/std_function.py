@@ -74,6 +74,27 @@ r = my_test.InvokeComputeFunction(5, 3, 4)
 assert(r == 19)
 '''
 
+
+test_squirrel = '''\
+local my_test = ::my_test;
+
+function simple_void_function() {
+	print("void function called!");
+}
+
+my_test.SetSimpleVoidFunction(simple_void_function);
+my_test.InvokeSimpleVoidFunction();
+
+function compute_function(v, m, c) {
+	return v * m + c;
+}
+
+my_test.SetComputeFunction(compute_function);
+local r = my_test.InvokeComputeFunction(5, 3, 4);
+
+assert(r == 19);
+'''
+
 test_special_cgo = '''\
 package mytest
 
