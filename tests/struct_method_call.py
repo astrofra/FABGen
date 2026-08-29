@@ -100,6 +100,23 @@ assert(s:get_a() == 9)
 assert(s.get_static_int() == 4)
 '''
 
+test_squirrel = '''\
+local s = my_test.simple_struct();
+
+assert(s.get_a() == 1);
+assert(s.set_a(8, 2) == true);
+
+assert(s.get_a() == 10);
+
+assert(s.set_a(9) == 9);
+assert(s.get_a() == 9);
+
+assert(my_test.simple_struct.get_static_int() == 4);
+
+local s2 = my_test.simple_struct2(s);
+assert(s2.a == 9);
+'''
+
 test_go = '''\
 package mytest
 

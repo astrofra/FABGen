@@ -2,6 +2,9 @@
 
 Date: Saturday, August 29, 2026
 
+Update on Saturday, August 29, 2026:
+Class binding work started after this MVP snapshot. See `specifications/SQUIRREL_CLASS_BINDING_PHASE2_2026-08-29.md`.
+
 ## Scope
 
 This work focused on two concrete steps inside FABGen, without expanding into Harfang engine integration:

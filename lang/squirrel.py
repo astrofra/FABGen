@@ -8,6 +8,15 @@ def _escape_sq_string(value):
 	return value.replace('\\', '\\\\').replace('"', '\\"')
 
 
+def build_index_map(name, values, filter, gen_output):
+	out = 'static std::map<std::basic_string<SQChar>, SQFUNCTION> %s = {' % name
+	if len(values) > 0:
+		entries = [gen_output(v) for v in values if filter(v)]
+		out += '\n' + ',\n'.join(entries) + '\n'
+	out += '};\n\n'
+	return out
+
+
 class SquirrelTypeConverterCommon(gen.TypeConverter):
 	def get_type_api(self, module_name):
 		out = '// type API for %s\n' % self.ctype
@@ -44,7 +53,265 @@ class SquirrelClassTypeConverter(SquirrelTypeConverterCommon):
 		return True
 
 	def get_type_glue(self, gen, module_name):
-		raise Exception('Squirrel class binding is not implemented yet')
+		out = ''
+
+		gen.add_include('string', True)
+
+		all_members = self.get_all_members()
+		all_methods = self.get_all_methods() + self.get_all_static_methods()
+
+		out += build_index_map('__get_member_map_%s' % self.bound_name, all_members, lambda v: True, lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['getter']))
+		out += build_index_map('__set_member_map_%s' % self.bound_name, all_members, lambda v: v['setter'], lambda v: '\t{_SC("%s"), %s}' % (_escape_sq_string(str(v['name'])), v['setter']))
+
+		if len(all_members) > 0:
+			out += '''static SQInteger __get_%s_instance(HSQUIRRELVM v) {
+	if (sq_gettype(v, 2) == OT_STRING) {
+		const SQChar *key_cstr = nullptr;
+		sq_getstring(v, 2, &key_cstr);
+		std::basic_string<SQChar> key = key_cstr;
+
+		auto i = __get_member_map_%s.find(key);
+		if (i != __get_member_map_%s.end()) {
+			sq_remove(v, 2);
+			return i->second(v);
+		}
+	}
+
+	sq_pushnull(v);
+	return sq_throwobject(v);
+}\n\n''' % (self.bound_name, self.bound_name, self.bound_name)
+
+		if any(member['setter'] for member in all_members):
+			out += '''static SQInteger __set_%s_instance(HSQUIRRELVM v) {
+	if (sq_gettype(v, 2) == OT_STRING) {
+		const SQChar *key_cstr = nullptr;
+		sq_getstring(v, 2, &key_cstr);
+		std::basic_string<SQChar> key = key_cstr;
+
+		auto i = __set_member_map_%s.find(key);
+		if (i != __set_member_map_%s.end()) {
+			sq_remove(v, 2);
+			return i->second(v);
+		}
+	}
+
+	sq_pushnull(v);
+	return sq_throwobject(v);
+}\n\n''' % (self.bound_name, self.bound_name, self.bound_name)
+
+		out += 'static void delete_%s(void *o) { delete (%s *)o; }\n\n' % (self.bound_name, self.ctype)
+
+		if self._inline:
+			out += '''static void delete_inline_%s(void *o) {
+	using T = %s;
+	((T*)o)->~T();
+}\n\n''' % (self.bound_name, self.ctype)
+
+		if self.constructor:
+			out += '''static SQInteger __constructor_%s(HSQUIRRELVM v) {
+	SQUserPointer self_ptr = nullptr;
+	if (SQ_FAILED(sq_getinstanceup(v, 1, &self_ptr, (SQUserPointer)(uintptr_t)%s, SQTrue)))
+		return SQ_ERROR;
+
+	auto self = (wrapped_Object *)self_ptr;
+	SQInteger top = sq_gettop(v);
+	SQInteger factory_rval_count = %s(v);
+	if (factory_rval_count == SQ_ERROR)
+		return SQ_ERROR;
+
+	if (factory_rval_count != 1 || !%s(v, -1)) {
+		sq_settop(v, top);
+		return sq_throwerror(v, _SC("internal error: invalid constructor result for %s"));
+	}
+
+	auto tmp = cast_to_wrapped_Object_unsafe(v, -1);
+''' % (self.bound_name, self.type_tag, self.constructor['proxy_name'], self.check_func, _escape_sq_string(self.bound_name))
+
+			if self._inline:
+				out += '''\
+	if (tmp->obj == (void *)tmp->inline_obj) {
+		init_wrapped_Object(self, %s, (void *)self->inline_obj);
+''' % self.type_tag
+
+				if self._non_copyable and self._moveable:
+					out += '		new((void *)self->inline_obj) %s(std::move(*(%s *)tmp->obj));\n' % (self.ctype, self.ctype)
+				else:
+					out += '		new((void *)self->inline_obj) %s(*(%s *)tmp->obj);\n' % (self.ctype, self.ctype)
+
+				out += '''\
+		self->on_delete = &delete_inline_%s;
+	} else {
+		*self = *tmp;
+	}
+''' % self.bound_name
+			else:
+				out += '\t*self = *tmp;\n'
+
+			out += '''\
+	tmp->on_delete = nullptr;
+	tmp->obj = nullptr;
+	tmp->magic_u32 = 0;
+
+	sq_setreleasehook(v, 1, wrapped_Object_releasehook);
+	sq_settop(v, top);
+	return 0;
+}\n\n'''
+		else:
+			out += '''static SQInteger __constructor_%s(HSQUIRRELVM v) {
+	return sq_throwerror(v, _SC("type %s is not constructible from Squirrel"));
+}\n\n''' % (self.bound_name, _escape_sq_string(self.bound_name))
+
+		out += '''bool %s(HSQUIRRELVM v, SQInteger idx) {
+	auto w = cast_to_wrapped_Object_safe(v, idx);
+	if (!w)
+		return false;
+	return _type_tag_can_cast(w->type_tag, %s);
+}\n''' % (self.check_func, self.type_tag)
+
+		out += '''void %s(HSQUIRRELVM v, SQInteger idx, void *obj) {
+	auto w = cast_to_wrapped_Object_unsafe(v, idx);
+	*(void **)obj = _type_tag_cast(w->obj, w->type_tag, %s);
+}\n''' % (self.to_c_func, self.type_tag)
+
+		is_inline = False
+
+		if self._non_copyable:
+			if self._moveable:
+				copy_code = 'obj = new %s(std::move(*(%s *)obj));' % (self.ctype, self.ctype)
+			else:
+				copy_code = 'return sq_throwerror(v, _SC("type %s is non-copyable and non-moveable"));' % _escape_sq_string(self.bound_name)
+		else:
+			if self._inline:
+				is_inline = True
+				copy_code = 'obj = new((void *)w->inline_obj) %s(*(%s *)obj);' % (self.ctype, self.ctype)
+			else:
+				copy_code = 'obj = new %s(*(%s *)obj);' % (self.ctype, self.ctype)
+
+		delete_code = 'w->on_delete = &delete_%s;' % self.bound_name
+		if is_inline:
+			delete_code = 'w->on_delete = &delete_inline_%s;' % self.bound_name
+
+		out += '''SQInteger %s(HSQUIRRELVM v, void *obj, OwnershipPolicy own) {
+	SQInteger top = sq_gettop(v);
+
+	sq_pushroottable(v);
+	sq_pushstring(v, _SC("%s"), -1);
+	if (SQ_FAILED(sq_get(v, -2))) {
+		sq_settop(v, top);
+		return sq_throwerror(v, _SC("module %s is not registered in the Squirrel root table"));
+	}
+
+	sq_pushstring(v, _SC("%s"), -1);
+	if (SQ_FAILED(sq_get(v, -2))) {
+		sq_settop(v, top);
+		return sq_throwerror(v, _SC("type %s is not registered in module %s"));
+	}
+
+	if (SQ_FAILED(sq_createinstance(v, -1))) {
+		sq_settop(v, top);
+		return SQ_ERROR;
+	}
+
+	SQUserPointer instance_ptr = nullptr;
+	if (SQ_FAILED(sq_getinstanceup(v, -1, &instance_ptr, (SQUserPointer)(uintptr_t)%s, SQFalse))) {
+		sq_settop(v, top);
+		return sq_throwerror(v, _SC("internal error: failed to access instance storage for %s"));
+	}
+
+	auto w = (wrapped_Object *)instance_ptr;
+	if (own == Copy)
+		%s
+	init_wrapped_Object(w, %s, obj);
+	if (own != NonOwning)
+		%s
+	sq_setreleasehook(v, -1, wrapped_Object_releasehook);
+
+	sq_remove(v, -2);
+	sq_remove(v, -2);
+	sq_remove(v, -2);
+	return 1;
+}\n''' % (
+			self.from_c_func,
+			_escape_sq_string(module_name),
+			_escape_sq_string(module_name),
+			_escape_sq_string(self.bound_name),
+			_escape_sq_string(self.bound_name),
+			_escape_sq_string(module_name),
+			self.type_tag,
+			_escape_sq_string(self.bound_name),
+			copy_code,
+			self.type_tag,
+			delete_code
+		)
+
+		out += 'static SQRESULT register_%s(HSQUIRRELVM v, SQInteger module_idx) {\n' % self.bound_name
+		out += '\tSQInteger top = sq_gettop(v);\n'
+		if self._inline:
+			out += '\tstatic_assert(sizeof(%s) <= 16, "inline Squirrel storage exceeds 16 bytes");\n' % self.ctype
+		out += '\tsq_newclass(v, SQFalse);\n'
+		out += '\tSQInteger class_idx = sq_gettop(v);\n'
+		out += '\tif (SQ_FAILED(sq_settypetag(v, class_idx, (SQUserPointer)(uintptr_t)%s))) {\n' % self.type_tag
+		out += '\t\tsq_settop(v, top);\n'
+		out += '\t\treturn SQ_ERROR;\n'
+		out += '\t}\n'
+		out += '\tif (SQ_FAILED(sq_setclassudsize(v, class_idx, sizeof(wrapped_Object)))) {\n'
+		out += '\t\tsq_settop(v, top);\n'
+		out += '\t\treturn SQ_ERROR;\n'
+		out += '\t}\n\n'
+
+		out += '\t// constructor\n'
+		out += '\tsq_pushstring(v, _SC("constructor"), -1);\n'
+		out += '\tsq_newclosure(v, __constructor_%s, 0);\n' % self.bound_name
+		out += '\tsq_setnativeclosurename(v, -1, _SC("constructor"));\n'
+		out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+		out += '\t\tsq_settop(v, top);\n'
+		out += '\t\treturn SQ_ERROR;\n'
+		out += '\t}\n\n'
+
+		if len(all_members) > 0:
+			out += '\t// instance member lookup\n'
+			out += '\tsq_pushstring(v, _SC("_get"), -1);\n'
+			out += '\tsq_newclosure(v, __get_%s_instance, 0);\n' % self.bound_name
+			out += '\tsq_setnativeclosurename(v, -1, _SC("_get"));\n'
+			out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+			out += '\t\tsq_settop(v, top);\n'
+			out += '\t\treturn SQ_ERROR;\n'
+			out += '\t}\n\n'
+
+		if any(member['setter'] for member in all_members):
+			out += '\t// instance member assignation\n'
+			out += '\tsq_pushstring(v, _SC("_set"), -1);\n'
+			out += '\tsq_newclosure(v, __set_%s_instance, 0);\n' % self.bound_name
+			out += '\tsq_setnativeclosurename(v, -1, _SC("_set"));\n'
+			out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+			out += '\t\tsq_settop(v, top);\n'
+			out += '\t\treturn SQ_ERROR;\n'
+			out += '\t}\n\n'
+
+		if len(all_methods) > 0:
+			out += '\t// methods\n'
+			for method in all_methods:
+				out += '\tsq_pushstring(v, _SC("%s"), -1);\n' % _escape_sq_string(method['bound_name'])
+				out += '\tsq_newclosure(v, %s, 0);\n' % method['proxy_name']
+				out += '\tsq_setnativeclosurename(v, -1, _SC("%s"));\n' % _escape_sq_string(method['bound_name'])
+				out += '\tif (SQ_FAILED(sq_newslot(v, class_idx, SQFalse))) {\n'
+				out += '\t\tsq_settop(v, top);\n'
+				out += '\t\treturn SQ_ERROR;\n'
+				out += '\t}\n'
+			out += '\n'
+
+		out += '\tsq_push(v, module_idx);\n'
+		out += '\tsq_pushstring(v, _SC("%s"), -1);\n' % _escape_sq_string(self.bound_name)
+		out += '\tsq_push(v, class_idx);\n'
+		out += '\tif (SQ_FAILED(sq_newslot(v, -3, SQFalse))) {\n'
+		out += '\t\tsq_settop(v, top);\n'
+		out += '\t\treturn SQ_ERROR;\n'
+		out += '\t}\n'
+		out += '\tsq_settop(v, top);\n'
+		out += '\treturn SQ_OK;\n'
+		out += '}\n\n'
+
+		return out
 
 
 class SquirrelPtrTypeConverter(SquirrelTypeConverterCommon):
@@ -136,6 +403,52 @@ class SquirrelGenerator(gen.FABGen):
 #include "squirrel.h"
 }
 \n'''
+
+		self._source += '''\
+typedef struct {
+	uint32_t magic_u32; // wrapped_Object marker
+	uint32_t type_tag; // wrapped pointer type tag
+
+	void *obj;
+	char inline_obj[16]; // storage for inline objects
+
+	void (*on_delete)(void *);
+} wrapped_Object;
+
+static void init_wrapped_Object(wrapped_Object *o, uint32_t type_tag, void *obj) {
+	o->magic_u32 = 0x46414221;
+	o->type_tag = type_tag;
+
+	o->obj = obj;
+
+	o->on_delete = nullptr;
+}
+
+static wrapped_Object *cast_to_wrapped_Object_safe(HSQUIRRELVM v, SQInteger idx) {
+	SQUserPointer instance_ptr = nullptr;
+	if (SQ_FAILED(sq_getinstanceup(v, idx, &instance_ptr, 0, SQFalse)))
+		return nullptr;
+
+	auto w = (wrapped_Object *)instance_ptr;
+	if (!w || w->magic_u32 != 0x46414221)
+		return nullptr;
+	return w;
+}
+
+static wrapped_Object *cast_to_wrapped_Object_unsafe(HSQUIRRELVM v, SQInteger idx) {
+	SQUserPointer instance_ptr = nullptr;
+	sq_getinstanceup(v, idx, &instance_ptr, 0, SQFalse);
+	return (wrapped_Object *)instance_ptr;
+}
+
+static SQInteger wrapped_Object_releasehook(SQUserPointer p, SQInteger size) {
+	auto w = (wrapped_Object *)p;
+	if (w && w->on_delete)
+		w->on_delete(w->obj);
+	return 0;
+}
+
+'''
 
 		self._source += '''
 class SquirrelValueRef {
@@ -314,6 +627,15 @@ struct %s {
 		self._source += self._custom_init_code
 		self._source += '\n'
 		self._source += '\tsq_newtable(v);\n\n'
+
+		classes_to_register = [type for type in self._bound_types if isinstance(type, SquirrelClassTypeConverter)]
+		if len(classes_to_register) > 0:
+			self._source += '\t// register bound classes\n'
+			self._source += '\tSQInteger module_idx = sq_gettop(v);\n'
+			for type in classes_to_register:
+				self._source += '\tif (SQ_FAILED(register_%s(v, module_idx)))\n' % type.bound_name
+				self._source += '\t\treturn SQ_ERROR;\n'
+			self._source += '\n'
 
 		if len(self._enums) > 0:
 			for name, enum in self._enums.items():
