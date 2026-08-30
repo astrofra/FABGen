@@ -18,7 +18,7 @@ def bind_stl(gen):
 	*((%s*)obj) = value;
 }
 ''' % (self.to_c_func, self.ctype) +\
-			'int %s(HSQUIRRELVM v, void *obj, OwnershipPolicy) { sq_pushstring(v, ((%s*)obj)->c_str(), -1); return 1; }\n' % (self.from_c_func, self.ctype)
+			'SQInteger %s(HSQUIRRELVM v, void *obj, OwnershipPolicy) { sq_pushstring(v, ((%s*)obj)->c_str(), -1); return 1; }\n' % (self.from_c_func, self.ctype)
 
 	gen.bind_type(SquirrelStringConverter('std::string'))
 
