@@ -53,6 +53,16 @@ n = my_test.GetNestedStructInt(s)
 assert(n.v == 9)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local s = my_test.enclosing_template_int();
+assert(s.n.v == 9);
+
+local n = my_test.GetNestedStructInt(s);
+assert(n.v == 9);
+'''
+
 test_go = """\
 package mytest
 

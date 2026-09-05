@@ -47,6 +47,14 @@ assert(s.v_ == -8)
 assert(t.v_ == 4)
 '''
 
+test_squirrel = '''\
+local s = my_test.simple_struct();
+local t = my_test.simple_struct(4);
+
+assert(s.v_ == -8);
+assert(t.v_ == 4);
+'''
+
 test_go = """\
 package mytest
 

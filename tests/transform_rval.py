@@ -89,6 +89,20 @@ assert(C.c == 7)
 assert(C:GetBaseValue() == 12)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local B = my_test.get_b();
+assert(B.b == 3);
+assert(B.GetBaseValue() == 12);
+assert(B.GetType() == "B");
+
+local C = my_test.get_c();
+assert(C.c == 7);
+assert(C.GetBaseValue() == 12);
+assert(C.GetType() == "C");
+'''
+
 test_go = '''\
 package mytest
 

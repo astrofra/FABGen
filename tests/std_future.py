@@ -34,7 +34,7 @@ std::future<int> GetFutureValue() {
 	lib.stl.bind_future_T(gen, 'int', 'FutureInt')
 	gen.bind_function('GetFutureValue', 'std::future<int>', [])
 
-	gen.add_custom_free_code('work_thread.join();\n')
+	gen.add_custom_free_code('if (work_thread.joinable()) work_thread.join();\n')
 	gen.finalize()
 
 	return gen.get_output()
@@ -58,6 +58,16 @@ assert(future:valid() == true)
 
 future:wait()
 assert(future:get() == 8)
+'''
+
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local future = my_test.GetFutureValue();
+assert(future.valid() == true);
+
+future.wait();
+assert(future.get() == 8);
 '''
 
 test_go = """\

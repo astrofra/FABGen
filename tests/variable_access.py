@@ -67,6 +67,21 @@ assert(my_test.w == 14)
 assert(my_test.u == 7)
 '''
 
+test_squirrel = '''\
+local my_test = ::my_test;
+
+assert(my_test.v == 2);
+my_test.v = 5;
+assert(my_test.v == 5);
+
+assert(my_test.s.v == 4);
+my_test.s.v = 9;
+assert(my_test.s.v == 9);
+
+assert(my_test.w == 14);
+assert(my_test.u == 7);
+'''
+
 test_go = '''\
 package mytest
 

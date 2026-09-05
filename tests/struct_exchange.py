@@ -82,6 +82,20 @@ my_test.take_simple_struct_by_value(s)
 assert(my_test.test_simple_struct() == true)
 '''
 
+test_squirrel = '''\
+local s = my_test.return_simple_struct_by_value();
+my_test.take_simple_struct_by_value(s);
+assert(my_test.test_simple_struct() == true);
+
+s = my_test.return_simple_struct_by_pointer();
+my_test.take_simple_struct_by_value(s);
+assert(my_test.test_simple_struct() == true);
+
+s = my_test.return_simple_struct_by_ref();
+my_test.take_simple_struct_by_value(s);
+assert(my_test.test_simple_struct() == true);
+'''
+
 test_go = '''\
 package mytest
 

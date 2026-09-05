@@ -9,23 +9,23 @@ def bind_test(gen):
 	gen.insert_code('''
 struct A { int v{2}; };
 void modify_in_out_struct(A *a) { a->v = 3; }
-''')
+''', True, False)
 	A = gen.begin_class('A')
 	gen.bind_constructor(A, [])
 	gen.bind_member(A, 'int v')
 	gen.end_class(A)
 	gen.bind_function('modify_in_out_struct', 'void', ['A *a'], {'arg_in_out': ['a']})
 
-	gen.insert_code('void out_values_function_call(int &a, int d, int *b, float k) { a = 8 * d; *b = 14 * k; }\n\n')
+	gen.insert_code('void out_values_function_call(int &a, int d, int *b, float k) { a = 8 * d; *b = 14 * k; }\n\n', True, False)
 	gen.bind_function('out_values_function_call', 'void', ['int &a', 'int d', 'int *b', 'float k'], {'arg_out': ['a', 'b']})
 
-	gen.insert_code('int out_values_function_call_rval(int &a, int d, int *b, float k = 1) { a = 8 * d; *b = 14 * d; return d*k; }\n\n')
+	gen.insert_code('int out_values_function_call_rval(int &a, int d, int *b, float k = 1) { a = 8 * d; *b = 14 * d; return d*k; }\n\n', True, False)
 	gen.bind_function_overloads('out_values_function_call_rval', [
 		('int', ['int &a', 'int d', 'int *b'], {'arg_out': ['a', 'b']}),
 		('int', ['int &a', 'int d', 'int *b', 'float k'], {'arg_out': ['a', 'b']})
 	])
 
-	gen.insert_code('bool in_out_value(int *in_out) { *in_out = *in_out * 4; return true; }')
+	gen.insert_code('bool in_out_value(int *in_out) { *in_out = *in_out * 4; return true; }', True, False)
 	gen.bind_function('in_out_value', 'bool', ['int *in_out'], {'arg_in_out': ['in_out']})
 
 	gen.finalize()
@@ -82,6 +82,36 @@ assert(b == 28)
 r, v = my_test.in_out_value(5)
 assert(r == true)
 assert(v == 20)
+'''
+
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local a = my_test.A();
+a = my_test.modify_in_out_struct(a);
+assert(a.v == 3);
+
+local out_values = my_test.out_values_function_call(2, 3);
+assert(out_values.len() == 2);
+assert(out_values[0] == 16);
+assert(out_values[1] == 42);
+
+local out_values_rval = my_test.out_values_function_call_rval(2);
+assert(out_values_rval.len() == 3);
+assert(out_values_rval[0] == 2);
+assert(out_values_rval[1] == 16);
+assert(out_values_rval[2] == 28);
+
+out_values_rval = my_test.out_values_function_call_rval(2, 2);
+assert(out_values_rval.len() == 3);
+assert(out_values_rval[0] == 4);
+assert(out_values_rval[1] == 16);
+assert(out_values_rval[2] == 28);
+
+local in_out = my_test.in_out_value(5);
+assert(in_out.len() == 2);
+assert(in_out[0] == true);
+assert(in_out[1] == 20);
 '''
 
 test_go = '''\

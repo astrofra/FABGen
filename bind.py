@@ -10,6 +10,7 @@ import argparse
 
 import gen
 import lang.lua
+import lang.squirrel
 import lang.go
 import lang.cpython
 import lang.xml
@@ -26,6 +27,7 @@ under certain conditions.''')
 parser = argparse.ArgumentParser(description='FABGen')
 parser.add_argument('script', nargs=1)
 parser.add_argument('--lua', help='Bind to Lua 5.2+', action='store_true')
+parser.add_argument('--squirrel', help='Bind to Squirrel 3.2+', action='store_true')
 parser.add_argument('--cpython', help='Bind to CPython', action='store_true')
 parser.add_argument('--go', help='Bind to Go', action='store_true')
 parser.add_argument('--xml', help='Bind to CPython', action='store_true')
@@ -102,6 +104,9 @@ if args.cpython:
 
 if args.lua:
 	output_binding(setup_generator(lang.lua.LuaGenerator()))
+
+if args.squirrel:
+	output_binding(setup_generator(lang.squirrel.SquirrelGenerator()))
 
 if args.go:
 	go_gen = lang.go.GoGenerator()

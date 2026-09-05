@@ -14,6 +14,12 @@ def bind_defaults(gen):
 
 		lib.lua.std.bind_std(gen)
 		lib.lua.stl.bind_stl(gen)
+	elif gen.get_language() == 'Squirrel':
+		import lib.squirrel.std
+		import lib.squirrel.stl
+
+		lib.squirrel.std.bind_std(gen)
+		lib.squirrel.stl.bind_stl(gen)
 	elif gen.get_language() == 'Go':
 		import lib.go.std
 		import lib.go.stl

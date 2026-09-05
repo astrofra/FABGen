@@ -8,7 +8,7 @@ def bind_test(gen):
 
 	gen.insert_code('''
 int *return_nullptr() { return nullptr; }
-''')
+''', True, False)
 	gen.bind_function('return_nullptr', 'int *', [])
 
 	gen.finalize()
@@ -27,6 +27,13 @@ my_test = require "my_test"
 
 v = my_test.return_nullptr()
 assert(v == nil)
+'''
+
+test_squirrel = '''\
+local my_test = ::my_test;
+
+local v = my_test.return_nullptr();
+assert(v == null);
 '''
 
 test_go = '''\
