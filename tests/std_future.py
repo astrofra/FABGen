@@ -88,3 +88,12 @@ func Test(t *testing.T) {
 	assert.Equal(t, future.Get(), int32(8), "should be the same.")
 }
 """
+
+
+test_quickjs = '''
+let future = my_test.GetFutureValue();
+assert(future.valid() == true);
+
+future.wait();
+assert(future.get() == 8);
+'''

@@ -48,3 +48,11 @@ test_go = '''\
 package mytest
 
 '''
+
+
+test_quickjs = '''
+let o = new my_test.SomeStruct();
+
+assert(o.toString() == "repr!");
+assert(("prefix:" + o) == "prefix:repr!");
+'''

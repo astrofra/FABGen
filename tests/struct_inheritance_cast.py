@@ -78,3 +78,10 @@ func Test(t *testing.T) {
 	assert.Equal(t, b.GetU(), int32(7), "should be the same.")
 }
 '''
+
+
+test_quickjs = '''
+let a = my_test.GetBaseClass();
+let b = my_test.Cast_base_class_To_derived_class(a);
+assert(b.u == 7);
+'''

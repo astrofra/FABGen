@@ -113,3 +113,14 @@ func Test(t *testing.T) {
 	assert.True(t, a.Equal(d), "should be the equal.")
 }
 '''
+
+
+test_quickjs = '''
+const a = my_test.get_obj0(), b = my_test.get_obj0(), c = my_test.get_obj1(), d = my_test.get_obj2();
+assert(a !== b);
+assert(a.equals(b));
+assert(!a.equals(c));
+assert(!b.equals(c));
+assert(a.equals(d));
+assert(b.equals(d));
+'''

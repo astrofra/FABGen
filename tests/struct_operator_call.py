@@ -208,3 +208,31 @@ func Test(t *testing.T) {
 	assert.True(t, a.Ne(b), "should be the same.")
 }
 """
+
+
+test_quickjs = '''
+const a = new my_test.simple_struct(4), b = new my_test.simple_struct(8);
+let s = a.add(b);
+assert(s.v === 12);
+assert(s.addAssign(b) === s);
+assert(s.v === 20);
+s.addAssign(4);
+assert(s.v === 24);
+s = s.div(4);
+assert(s.v === 6);
+s.divAssign(3).addAssign(a);
+assert(s.v === 6);
+s = s.mul(a);
+s.mulAssign(2);
+assert(s.v === 48);
+s = s.sub(b);
+s.subAssign(32);
+assert(s.v === 8);
+const c = a.mul(2);
+assert(c !== b && c.equals(b));
+assert(a.notEquals(b));
+throws(() => a.add());
+throws(() => a.add(1,2));
+throws(() => a.add("4"));
+throws(() => a.add.call({}, 4));
+'''

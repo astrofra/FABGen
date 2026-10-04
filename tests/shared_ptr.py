@@ -122,3 +122,20 @@ func Test(t *testing.T) {
 	assert.True(t, spn.IsNil(), "should be nil.")
 }
 '''
+
+
+test_quickjs = '''
+let sp = my_test.get_shared_ptr_to_simple_struct();
+
+assert(sp.u == 4.0);
+assert(sp.v == 7);
+
+let sp2 = new my_test.ssimple_struct(9.0);
+
+assert(sp2.u == 9.0);
+assert(sp2.v == 90);
+
+let spn = my_test.get_empty_shared_ptr();
+
+assert(spn == null);
+'''

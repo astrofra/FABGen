@@ -9,12 +9,14 @@ def bind_test(gen):
 	gen.insert_code('''
 struct A { int v{2}; };
 void modify_in_out_struct(A *a) { a->v = 3; }
+void out_then_inout(int &out, A &a) { out = 7; a.v = 9; }
 ''', True, False)
 	A = gen.begin_class('A')
 	gen.bind_constructor(A, [])
 	gen.bind_member(A, 'int v')
 	gen.end_class(A)
 	gen.bind_function('modify_in_out_struct', 'void', ['A *a'], {'arg_in_out': ['a']})
+	gen.bind_function('out_then_inout', 'void', ['int &out', 'A &a'], {'arg_out': ['out'], 'arg_in_out': ['a']})
 
 	gen.insert_code('void out_values_function_call(int &a, int d, int *b, float k) { a = 8 * d; *b = 14 * k; }\n\n', True, False)
 	gen.bind_function('out_values_function_call', 'void', ['int &a', 'int d', 'int *b', 'float k'], {'arg_out': ['a', 'b']})
@@ -38,6 +40,9 @@ import my_test
 a = my_test.A()
 a = my_test.modify_in_out_struct(a)
 assert a.v == 3
+
+out, same = my_test.out_then_inout(a)
+assert out == 7 and same is a and a.v == 9
 
 a, b = my_test.out_values_function_call(2, 3)
 assert a == 16
@@ -149,4 +154,38 @@ func Test(t *testing.T) {
 	assert.True(t, rb, "should be the same.")
 	assert.Equal(t, w, int32(20), "should be the same.")
 }
+'''
+
+
+test_quickjs = '''
+let a = new my_test.A();
+a = my_test.modify_in_out_struct(a);
+assert(a.v == 3);
+
+let out_values = my_test.out_values_function_call(2, 3);
+assert(out_values.length == 2);
+assert(out_values[0] == 16);
+assert(out_values[1] == 42);
+
+let out_values_rval = my_test.out_values_function_call_rval(2);
+assert(out_values_rval.length == 3);
+assert(out_values_rval[0] == 2);
+assert(out_values_rval[1] == 16);
+assert(out_values_rval[2] == 28);
+
+out_values_rval = my_test.out_values_function_call_rval(2, 2);
+assert(out_values_rval.length == 3);
+assert(out_values_rval[0] == 4);
+assert(out_values_rval[1] == 16);
+assert(out_values_rval[2] == 28);
+
+let in_out = my_test.in_out_value(5);
+assert(in_out.length == 2);
+assert(in_out[0] == true);
+assert(in_out[1] == 20);
+
+let original = new my_test.A();
+assert(my_test.modify_in_out_struct(original) === original);
+const [out, same] = my_test.out_then_inout(original);
+assert(out === 7 && same === original && original.v === 9);
 '''

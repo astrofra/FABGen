@@ -50,6 +50,9 @@ def bind_function_T(gen, type, bound_name=None):
 	elif gen.get_language() == 'Squirrel':
 		import lib.squirrel.stl
 		lib.squirrel.stl.bind_function_T(gen, type, bound_name)
+	elif gen.get_language() == 'QuickJS':
+		import lib.quickjs.stl
+		return lib.quickjs.stl.bind_function_T(gen, type, bound_name)
 	elif gen.get_language() == 'Go':
 		import lib.go.stl
 		lib.go.stl.bind_function_T(gen, type, bound_name)

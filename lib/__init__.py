@@ -20,6 +20,12 @@ def bind_defaults(gen):
 
 		lib.squirrel.std.bind_std(gen)
 		lib.squirrel.stl.bind_stl(gen)
+	elif gen.get_language() == 'QuickJS':
+		import lib.quickjs.std
+		import lib.quickjs.stl
+
+		lib.quickjs.std.bind_std(gen)
+		lib.quickjs.stl.bind_stl(gen)
 	elif gen.get_language() == 'Go':
 		import lib.go.std
 		import lib.go.stl

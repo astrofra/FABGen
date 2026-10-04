@@ -123,3 +123,16 @@ func Test(t *testing.T) {
 	assert.Equal(t, C.GetBaseValue(), int32(12), "should be the same.")
 }
 '''
+
+
+test_quickjs = '''
+let B = my_test.get_b();
+assert(B.b == 3);
+assert(B.GetBaseValue() == 12);
+assert(B.GetType() == "B");
+
+let C = my_test.get_c();
+assert(C.c == 7);
+assert(C.GetBaseValue() == 12);
+assert(C.GetType() == "C");
+'''

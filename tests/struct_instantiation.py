@@ -73,3 +73,12 @@ func Test(t *testing.T) {
 	assert.Equal(t, u.GetV(), int32(4), "should be the same.")
 }
 """
+
+
+test_quickjs = '''
+let s = new my_test.simple_struct();
+let t = new my_test.simple_struct(4);
+
+assert(s.v_ == -8);
+assert(t.v_ == 4);
+'''

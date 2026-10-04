@@ -59,3 +59,16 @@ assert(exception_raised == true);
 test_go = '''\
 package mytest
 '''
+
+
+test_quickjs = '''
+let exception_raised = false;
+
+try {
+	my_test.get_int();
+} catch (e) {
+	exception_raised = true;
+}
+
+assert(exception_raised == true);
+'''
