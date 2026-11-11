@@ -106,3 +106,19 @@ func Test(t *testing.T) {
 	assert.Equal(t, GetU(), float32(7), "should be the same.")
 }
 '''
+
+
+test_quickjs = '''
+import live from 'my_test';
+assert(my_test.v === 2);
+assert(my_test.get_v() === 2);
+live.v = 5;
+assert(my_test.get_v() === 5);
+my_test.set_v(6);
+assert(live.v === 6);
+assert(live.s.v === 4);
+live.s.v = 9;
+assert(live.s.v === 9);
+assert(my_test.w === 14);
+assert(my_test.u === 7);
+'''

@@ -197,3 +197,31 @@ func Test(t *testing.T) {
 	assert.Equal(t, DerivedClassGetStaticOverride(), int32(42), "should be the same.")
 }
 '''
+
+
+test_quickjs = '''
+let base_obj = new my_test.base_class();
+assert(base_obj.base_method() == 4);
+assert(base_obj.base_method_override() == 4);
+assert(base_obj.virtual_method() == 6);
+
+let derived_obj = new my_test.derived_class();
+assert(derived_obj.base_method() == 4);
+assert(derived_obj.derived_method() == 8);
+assert(derived_obj.base_method_override() == 8);
+assert(derived_obj.virtual_method() == 9);
+
+assert(my_test.read_virtual_method_through_base_class(base_obj) == 6);
+assert(my_test.read_virtual_method_through_base_class(derived_obj) == 9);
+
+assert(base_obj.u == 6);
+assert(derived_obj.u == 6);
+
+assert(base_obj.override == 4);
+assert(derived_obj.override == 12);
+
+assert(my_test.base_class.v == 7);
+assert(my_test.derived_class.v == 7);
+assert(my_test.base_class.static_override == 1);
+assert(my_test.derived_class.static_override == 42);
+'''

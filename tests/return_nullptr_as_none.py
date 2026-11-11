@@ -50,3 +50,9 @@ func Test(t *testing.T) {
 	assert.Nil(t, v, "should be nil.")
 }
 '''
+
+
+test_quickjs = '''
+let v = my_test.return_nullptr();
+assert(v == null);
+'''

@@ -79,3 +79,12 @@ func Test(t *testing.T) {
 	assert.Equal(t, n.GetV(), int32(9), "should be the same.")
 }
 """
+
+
+test_quickjs = '''
+let s = new my_test.enclosing_template_int();
+assert(s.n.v == 9);
+
+let n = my_test.GetNestedStructInt(s);
+assert(n.v == 9);
+'''

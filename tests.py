@@ -13,6 +13,7 @@ import os
 import lang.cpython
 import lang.lua
 import lang.squirrel
+import lang.quickjs
 import lang.go
 
 
@@ -22,6 +23,12 @@ parser = argparse.ArgumentParser(description='Run generator unit tests.')
 parser.add_argument('--pybase', dest='python_base_path', help='Path to the Python interpreter')
 parser.add_argument('--luabase', dest='lua_base_path', help='Path to the Lua interpreter')
 parser.add_argument('--sqbase', dest='squirrel_base_path', help='Path to the Squirrel source tree')
+parser.add_argument('--qjsbase', help='Path to official QuickJS 2026-06-04 source')
+parser.add_argument('--qjs-cc', help='C compiler executable (GCC, Clang or zig)')
+parser.add_argument('--qjs-cxx', help='C++14 compiler executable (defaults to CXX/c++)')
+parser.add_argument('--qjs-debug', action='store_true', help='Build QuickJS tests without optimization')
+parser.add_argument('--tests', nargs='+', help='Run only these named test modules')
+parser.add_argument('--keep-failed', action='store_true', help='Keep generated files for failed tests')
 parser.add_argument('--go', dest='go_build', help='Build GO', action="store_true")
 parser.add_argument('--debug', dest='debug_test', help='Generate a working solution to debug a test')
 parser.add_argument('--x64', dest='x64', help='Build for 64 bit architecture', action='store_true', default=False)
@@ -30,7 +37,7 @@ parser.add_argument('--linux', dest='linux', help='Build on Linux', action='stor
 args = parser.parse_args()
 
 if args.python_base_path:
-	args.python_base_path = os.path.abspath(args.python_base_path)
+	args.python_base_path = os.path.abspath(args.python_base_path).replace('\\', '/')
 
 if args.lua_base_path:
 	args.lua_base_path = os.path.abspath(args.lua_base_path)
@@ -103,7 +110,7 @@ def run_test(gen, name, testbed):
 			subprocess.Popen('xdg-open "%s"' % work_path, shell=True)
 		else:
 			subprocess.Popen('explorer "%s"' % work_path)
-	else:
+	elif not (args.keep_failed and not result):
 		shutil.rmtree(work_path, ignore_errors=True)
 
 
@@ -764,6 +771,8 @@ sys.path.append(os.path.join(start_path, 'tests'))
 
 if args.debug_test:
 	test_names = [args.debug_test]
+elif args.tests:
+	test_names = args.tests
 else:
 	test_names = [file[:-3] for file in os.listdir('./tests') if file.endswith('.py')]
 
@@ -783,6 +792,12 @@ if args.squirrel_base_path:
 	gen.verbose = False
 	gen.embedded = True
 	run_tests(gen, test_names, SquirrelTestBed())
+
+if args.qjsbase:
+	from quickjs_tests import QuickJSTestBed
+	gen = lang.quickjs.QuickJSGenerator()
+	gen.verbose = False
+	run_tests(gen, test_names, QuickJSTestBed(args.qjsbase, args.qjs_cc, args.qjs_cxx, args.qjs_debug))
 
 if args.go_build:
 	gen = lang.go.GoGenerator()

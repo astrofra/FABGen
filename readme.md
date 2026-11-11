@@ -6,6 +6,10 @@
 Fabgen is a set of Python scripts to generate C++ binding code to different languages.  
 It was written as a SWIG replacement for the Harfang Multimedia Framework (http://www.harfang3d.com).
 
+Official QuickJS support is available through `--quickjs`. See the
+[QuickJS guide](quickjs.md) for JavaScript semantics, embedding, ownership, and
+the runnable CMake example.
+
 ## Authors
 
 Fabgen is written and maintained by Emmanuel Julien for the Harfang Multimedia Framework (http://www.harfang3d.com).  

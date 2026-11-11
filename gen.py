@@ -1058,7 +1058,9 @@ class FABGen:
 					else:
 						arg_ctype = arg['conv'].ctype
 
-					rvals_prepare_args.append({'conv': arg['conv'], 'ctype': arg_ctype, 'var': 'arg%d' % idx, 'is_arg_in_out': is_arg_in_out, 'arg_idx': idx, 'ctx': ctx, 'ownership': None})
+					# Output-only arguments do not occupy a script argument slot.
+					input_idx = next((i for i, input_arg in enumerate(proto['argsin']) if input_arg is arg), idx)
+					rvals_prepare_args.append({'conv': arg['conv'], 'ctype': arg_ctype, 'var': 'arg%d' % idx, 'is_arg_in_out': is_arg_in_out, 'arg_idx': input_idx, 'ctx': ctx, 'ownership': None})
 					rvals.append('arg%d' % idx)
 
 		# check return values

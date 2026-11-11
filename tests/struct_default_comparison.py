@@ -92,3 +92,17 @@ func Test(t *testing.T) {
 	assert.NotEqual(t, b, c, "should not be the same.")
 }
 '''
+
+
+test_quickjs = '''
+let a = my_test.get_obj0();
+let b = my_test.get_obj0();
+
+assert(a !== b);
+assert(a.equals(b));
+
+let c = my_test.get_obj1();
+
+assert(!a.equals(c));
+assert(!b.equals(c));
+'''

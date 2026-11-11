@@ -60,3 +60,9 @@ func Test(t *testing.T) {
 	assert.Equal(t, o.Get(4), int32(15), "should be the same.")
 }
 """
+
+
+test_quickjs = '''
+let o = new my_test.Object();
+assert(o.Get(4) == 15);
+'''

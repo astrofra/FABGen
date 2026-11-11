@@ -145,3 +145,21 @@ func Test(t *testing.T) {
 	TestStdFunction(t)
 }
 '''
+
+
+test_quickjs = '''
+let count = 0;
+my_test.SetSimpleVoidFunction(() => { ++count; });
+my_test.InvokeSimpleVoidFunction();
+assert(count === 1);
+my_test.SetComputeFunction((v, m, c) => v * m + c);
+assert(my_test.InvokeComputeFunction(5, 3, 4) === 19);
+my_test.SetComputeFunction(() => { throw new RangeError("callback failure"); });
+throws(() => my_test.InvokeComputeFunction(1, 2, 3), RangeError);
+my_test.SetComputeFunction(() => "bad result");
+throws(() => my_test.InvokeComputeFunction(1, 2, 3));
+my_test.SetComputeFunction(async () => 4);
+throws(() => my_test.InvokeComputeFunction(1, 2, 3));
+my_test.SetComputeFunction((v) => v);
+assert(my_test.InvokeComputeFunction(7, 2, 3) === 7);
+'''

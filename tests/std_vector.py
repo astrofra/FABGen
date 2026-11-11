@@ -33,6 +33,9 @@ int consume_pointer_to_int(const int *p) {
 	elif gen.get_language() == 'Squirrel':
 		gen.bind_type(lib.squirrel.stl.SquirrelArrayToStdVectorConverter('SquirrelArrayOfInt', int_conv))
 		gen.bind_type(lib.squirrel.stl.SquirrelArrayToStdVectorConverter('SquirrelArrayOfInt_ptr', int_ptr))
+	elif gen.get_language() == 'QuickJS':
+		gen.bind_type(lib.quickjs.stl.QuickJSArrayToStdVectorConverter('QuickJSArrayOfInt', int_conv))
+		gen.bind_type(lib.quickjs.stl.QuickJSArrayToStdVectorConverter('QuickJSArrayOfInt_ptr', int_ptr))
 	elif gen.get_language() == 'Go':
 		gen.bind_type(lib.go.stl.GoSliceToStdVectorConverter('GoSliceOfInt', int_conv))
 		gen.bind_type(lib.go.stl.GoSliceToStdVectorConverter('GoSliceOfInt_ptr', int_ptr))
@@ -45,6 +48,8 @@ int consume_pointer_to_int(const int *p) {
 		gen.bind_constructor(std_vector_int, ['?LuaTableOfInt sequence'])
 	elif gen.get_language() == 'Squirrel':
 		gen.bind_constructor(std_vector_int, ['?SquirrelArrayOfInt sequence'])
+	elif gen.get_language() == 'QuickJS':
+		gen.bind_constructor(std_vector_int, ['?QuickJSArrayOfInt sequence'])
 	elif gen.get_language() == 'Go':
 		gen.bind_constructor(std_vector_int, ['?GoSliceOfInt sequence'])
 
@@ -68,6 +73,8 @@ int consume_pointer_to_int(const int *p) {
 		gen.bind_constructor(std_vector_int_ptr, ['?LuaTableOfInt_ptr sequence'])
 	elif gen.get_language() == 'Squirrel':
 		gen.bind_constructor(std_vector_int_ptr, ['?SquirrelArrayOfInt_ptr sequence'])
+	elif gen.get_language() == 'QuickJS':
+		gen.bind_constructor(std_vector_int_ptr, ['?QuickJSArrayOfInt_ptr sequence'])
 	elif gen.get_language() == 'Go':
 		gen.bind_constructor(std_vector_int_ptr, ['?GoSliceOfInt_ptr sequence'])
 
@@ -315,4 +322,30 @@ func Test(t *testing.T) {
 	assert.Equal(t, vPtr.Size(), int32(2), "should be the same.")
 	assert.Equal(t, vPtr.Len(), int32(2), "should be the same.")
 }
+'''
+
+
+test_quickjs = '''
+let v = new my_test.vector_of_int();
+assert(v.size() === 0 && v.length === 0);
+v.push_back(5); v.push_back(1); v.push_back(9);
+assert(v.length === 3);
+assert(v.get(0) === 5 && v.get(1) === 1 && v.get(2) === 9);
+v.set(1, 16); v.set(0, v.get(0) * 4);
+assert(v.at(0) === 20 && v.at(1) === 16);
+assert(my_test.consume_pointer_to_int(v.data()) === 16);
+assert(my_test.consume_pointer_to_int(v) === 16);
+throws(() => v.get(-1), RangeError);
+throws(() => v.get(3), RangeError);
+throws(() => v.set(3, 4), RangeError);
+throws(() => v.at(100), Error);
+throws(() => v.set(0, 1.5));
+let w = new my_test.vector_of_int([5, 2, 8]);
+assert(w.length === 3 && w.get(0) === 5 && w.get(2) === 8);
+let ptrs = new my_test.vector_of_int_ptr();
+ptrs.push_back(null); ptrs.push_back(v.data());
+assert(ptrs.length === 2 && ptrs.get(0) === null);
+assert(my_test.consume_pointer_to_int(ptrs.get(1)) === 16);
+const copy = new my_test.vector_of_int_ptr([null, v.data()]);
+assert(copy.get(0) === null && my_test.consume_pointer_to_int(copy.get(1)) === 16);
 '''

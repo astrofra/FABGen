@@ -11,6 +11,7 @@ import argparse
 import gen
 import lang.lua
 import lang.squirrel
+import lang.quickjs
 import lang.go
 import lang.cpython
 import lang.xml
@@ -28,6 +29,7 @@ parser = argparse.ArgumentParser(description='FABGen')
 parser.add_argument('script', nargs=1)
 parser.add_argument('--lua', help='Bind to Lua 5.2+', action='store_true')
 parser.add_argument('--squirrel', help='Bind to Squirrel 3.2+', action='store_true')
+parser.add_argument('--quickjs', help='Bind to official QuickJS (2026-06-04)', action='store_true')
 parser.add_argument('--cpython', help='Bind to CPython', action='store_true')
 parser.add_argument('--go', help='Bind to Go', action='store_true')
 parser.add_argument('--xml', help='Bind to CPython', action='store_true')
@@ -55,7 +57,8 @@ def output_binding(generator):
 	script.bind(generator)
 
 	for path, src in generator.get_output().items():
-		path = os.path.join(args.out, args.out_prefix + path)
+		# QuickJS support is shared by separately prefixed binding variants.
+		path = os.path.join(args.out, path if path == 'fabgen_quickjs.h' else args.out_prefix + path)
 		with open(path, mode='w', encoding='utf-8') as f:
 			f.write(src)
 		print('File written to %s' % path)
@@ -107,6 +110,9 @@ if args.lua:
 
 if args.squirrel:
 	output_binding(setup_generator(lang.squirrel.SquirrelGenerator()))
+
+if args.quickjs:
+	output_binding(setup_generator(lang.quickjs.QuickJSGenerator()))
 
 if args.go:
 	go_gen = lang.go.GoGenerator()

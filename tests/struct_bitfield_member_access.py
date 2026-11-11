@@ -104,3 +104,20 @@ func Test(t *testing.T) {
 	assert.Equal(t, s.GetC(), int32(2), "should be the same.")
 }
 '''
+
+
+test_quickjs = '''
+let s = new my_test.simple_struct();
+
+assert(s.a == 3);
+assert(s.b == 11);
+assert(s.c == 1);
+
+s.a = 1;
+s.b = 7;
+s.c = 2;
+
+assert(s.a == 1);
+assert(s.b == 7);
+assert(s.c == 2);
+'''

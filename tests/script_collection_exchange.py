@@ -21,6 +21,10 @@ def bind_test(gen):
 		from lib.squirrel import stl as squirrel_stl
 		gen.bind_type(squirrel_stl.SquirrelArrayToStdVectorConverter('std::vector<int>', int_conv))
 		gen.bind_type(squirrel_stl.SquirrelTableToStdMapConverter('std::map<std::string, int>', string_conv, int_conv))
+	elif gen.get_language() == 'QuickJS':
+		from lib.quickjs import stl as quickjs_stl
+		gen.bind_type(quickjs_stl.QuickJSArrayToStdVectorConverter('std::vector<int>', int_conv))
+		gen.bind_type(quickjs_stl.QuickJSObjectToStdMapConverter('std::map<std::string, int>', string_conv, int_conv))
 
 	gen.insert_code('''\
 #include <map>
@@ -109,4 +113,20 @@ assert(my_test.sum_table({ alpha = 4, beta = 6 }) == 10);
 local u = my_test.mutate_table({ alpha = 1, beta = 2 });
 assert(u.alpha == 2);
 assert(u.gamma == 6);
+'''
+
+
+test_quickjs = '''
+const values = my_test.extend_vector([1,2,3]);
+assert(Array.isArray(values) && values.join() === '1,2,3,7');
+assert(my_test.sum_vector([4,5,6]) === 15);
+let table = my_test.make_table();
+assert(table.alpha === 2 && table.beta === 5);
+assert(my_test.sum_table({alpha:4, beta:6}) === 10, String(my_test.sum_table({alpha:4, beta:6})));
+let result = my_test.mutate_table({alpha:1,beta:2});
+assert(result.alpha === 2 && result.gamma === 6);
+throws(() => my_test.sum_table({alpha:'bad', beta:2}));
+let calls = 0;
+throws(() => my_test.sum_table({get alpha() { ++calls; return 1; }, beta:2}));
+assert(calls === 0);
 '''

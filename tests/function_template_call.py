@@ -54,3 +54,9 @@ func Test(t *testing.T) {
 	assert.Equal(t, GetFloat(), float32(8), "should be the same.")
 }
 """
+
+
+test_quickjs = '''
+assert(my_test.get_int() == 8);
+assert(my_test.get_float() == 8);
+'''
